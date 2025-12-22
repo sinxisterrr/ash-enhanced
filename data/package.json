@@ -1,0 +1,21 @@
+{
+  "name": "ash-bot",
+  "version": "1.0.0",
+  "description": "Ash Thorne Marrow — autonomous memory-based Discord companion.",
+  "main": "dist/index.js",
+  "type": "module",
+  "scripts": {
+    "start": "node dist/index.js",
+    "dev": "ts-node src/index.ts",
+    "build": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "discord.js": "^14.15.3",
+    "node-fetch": "^3.3.2"
+  },
+  "devDependencies": {
+    "typescript": "^5.4.0",
+    "ts-node": "^10.9.1",
+    "@types/node": "^20.11.30"
+  }
+}
