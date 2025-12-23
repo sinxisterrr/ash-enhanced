@@ -292,6 +292,9 @@ client.once('ready', async () => {
 // Helper function to send a message and receive a response
 async function processAndSendMessage(message: any, messageType: MessageType, conversationContext: string | null = null, customContent: string | null = null): Promise<void> {
   try {
+    if (message?.channel?.sendTyping) {
+      await message.channel.sendTyping();
+    }
     const msg = await sendMessage(message, messageType, conversationContext, customContent);
     
     if (msg !== "") {
@@ -503,6 +506,9 @@ client.on('messageCreate', async (message) => {
       messageType = MessageType.MENTION;
     }
     
+    if (message?.channel?.sendTyping) {
+      await message.channel.sendTyping();
+    }
     const msg = await sendMessage(message, messageType, conversationContext, fileChunkResponse);
     
     if (msg !== "") {
@@ -550,6 +556,9 @@ client.on('messageCreate', async (message) => {
       messageType = MessageType.MENTION;
     }
     
+    if (message?.channel?.sendTyping) {
+      await message.channel.sendTyping();
+    }
     const msg = await sendMessage(message, messageType, conversationContext, chunkResponse);
     
     if (msg !== "") {
@@ -671,6 +680,9 @@ client.on('messageCreate', async (message) => {
       console.log('📺 Transcript(s) attached to message - sending to Letta');
     }
     
+    if (message?.channel?.sendTyping) {
+      await message.channel.sendTyping();
+    }
     const msg = await sendMessage(message, messageType, conversationContext, processedContent);
     if (msg !== "") {
       // 🔒 Record bot reply
