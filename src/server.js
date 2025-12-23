@@ -102,7 +102,7 @@ function getChannelContextLimit() {
     const contextLen = (0, env_js_1.getModelContextLength)();
     const tokensPerMessage = (0, env_js_1.getContextTokensPerMessage)();
     const derived = Math.floor(contextLen / Math.max(1, tokensPerMessage));
-    return Math.max(5, Math.min(120, derived));
+    return Math.max(5, Math.min(100, derived)); // Discord API max is 100
 }
 async function buildChannelContext(message) {
     const channel = message.channel;
