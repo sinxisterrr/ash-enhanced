@@ -144,12 +144,13 @@ async function buildChannelContext(message: any): Promise<string | null> {
     const lines = ordered.map((msg: any) => {
       const author = msg.author?.username || msg.author?.id || 'unknown';
       let content = (msg.content || '').trim();
+      if (content) {
+        content = content.replace(/https?:\/\/\S+/gi, "[link]");
+      }
       if (!content && msg.attachments?.size > 0) {
-        const urls = Array.from(msg.attachments.values())
-          .map((att: any) => att.url)
-          .filter(Boolean)
-          .slice(0, 3);
-        content = urls.length > 0 ? `[attachment] ${urls.join(' ')}` : '[attachment]';
+        content = `[attachment x${msg.attachments.size}]`;
+      } else if (content && msg.attachments?.size > 0) {
+        content = `${content} [attachment x${msg.attachments.size}]`;
       }
       if (!content) content = '[no text]';
       return `${author}: ${content}`;
