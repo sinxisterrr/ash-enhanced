@@ -6,6 +6,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.handleMessage = handleMessage;
 const logger_js_1 = require("../utils/logger.js");
 const executor_js_1 = require("../tools/executor.js");
+const whisper_js_1 = require("../transcription/whisper.js");
 const memorySystem_js_1 = require("../memory/memorySystem.js");
 const memoryStore_js_1 = require("../memory/memoryStore.js");
 const blockMemory_js_1 = require("../memory/blockMemory.js");
@@ -17,6 +18,10 @@ const TEXT_EXTENSIONS = new Set([
 ]);
 const MAX_ATTACHMENT_BYTES = 200000;
 const MAX_ATTACHMENT_CHARS = 12000;
+const AUDIO_EXTENSIONS = new Set([
+    "ogg", "mp3", "wav", "m4a", "mp4", "webm", "aac", "flac"
+]);
+const MAX_AUDIO_ATTACHMENTS = parseInt(process.env.MAX_AUDIO_ATTACHMENTS || "1", 10);
 function hasTextExtension(filename) {
     if (!filename)
         return false;
@@ -31,6 +36,17 @@ function isTextAttachment(att) {
     if (contentType.startsWith("text/"))
         return true;
     return hasTextExtension(att.name ?? null);
+}
+function isAudioAttachment(att) {
+    const contentType = att.contentType?.toLowerCase() ?? "";
+    if (contentType.startsWith("audio/"))
+        return true;
+    const name = att.name ?? "";
+    const dot = name.lastIndexOf(".");
+    if (dot === -1)
+        return false;
+    const ext = name.slice(dot + 1).toLowerCase();
+    return AUDIO_EXTENSIONS.has(ext);
 }
 async function readTextAttachments(message) {
     const parts = [];
@@ -67,6 +83,27 @@ async function readTextAttachments(message) {
         text: parts.join("\n\n"),
         skipped,
     };
+}
+async function transcribeAudioAttachments(message) {
+    const transcripts = [];
+    let processed = 0;
+    for (const att of message.attachments.values()) {
+        if (processed >= MAX_AUDIO_ATTACHMENTS)
+            break;
+        if (!isAudioAttachment(att))
+            continue;
+        try {
+            const text = await (0, whisper_js_1.transcribeAudioFromUrl)(att.url, att.name ?? "voice-note.ogg", att.contentType ?? undefined);
+            if (text) {
+                transcripts.push(text);
+                processed += 1;
+            }
+        }
+        catch {
+            continue;
+        }
+    }
+    return transcripts;
 }
 function parseManualMemoryCommand(text) {
     const match = text.match(/^(?:save\s+to\s+ltm|ltm(?:\s*save)?|remember\s+to\s+ltm)\s*(?:[:\-]\s*|\s+)(.+)$/i);
@@ -169,7 +206,17 @@ async function handleMessage(message, options = {}) {
     const { text: attachmentText, skipped } = includeAttachments
         ? await readTextAttachments(message)
         : { text: "", skipped: [] };
-    const userText = [baseText, attachmentText].filter(Boolean).join("\n\n");
+    const audioTranscripts = includeAttachments
+        ? await transcribeAudioAttachments(message)
+        : [];
+    const audioText = audioTranscripts.length > 0
+        ? audioTranscripts
+            .map((t, i) => `[Voice Note ${i + 1} Transcript]\n${t}`)
+            .join("\n\n")
+        : "";
+    const userText = [baseText, attachmentText, audioText]
+        .filter(Boolean)
+        .join("\n\n");
     if (!userText) {
         if (message.attachments.size > 0) {
             const notice = skipped.length > 0
@@ -229,6 +276,10 @@ async function handleMessage(message, options = {}) {
     if (process.env.MEMORY_DEBUG === "true") {
         logger_js_1.logger.info(`🧠 Memory recall: relevant=${relevant.length}, archival=${archivalMemories.length}, human=${humanBlocks.length}, persona=${personaBlocks.length}`);
     }
+    const isDm = !message.guildId;
+    const voiceTargetHint = isDm
+        ? `If you call send_voice_message, use target_type="user" and target="${message.author.id}".`
+        : `If you call send_voice_message, use target_type="channel" and target="${message.channel.id}".`;
     const packet = {
         userText,
         stm: historyBeforeUser,
@@ -239,6 +290,8 @@ async function handleMessage(message, options = {}) {
         humanBlocks,
         personaBlocks,
         conversationContext: options.conversationContext ?? undefined,
+        voiceNoteCount: audioTranscripts.length,
+        voiceTargetHint,
         authorId: message.author.id,
         authorName: message.author.id, // ← Use ID instead of username
     };

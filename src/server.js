@@ -11,6 +11,7 @@ const taskScheduler_1 = require("./taskScheduler");
 const youtubeTranscript_1 = require("./youtubeTranscript");
 const fileChunking_1 = require("./fileChunking");
 const index_js_1 = require("./index.js");
+const env_js_1 = require("./utils/env.js");
 // 🔒 AUTONOMOUS BOT-LOOP PREVENTION SYSTEM
 const autonomous_1 = require("./autonomous");
 // 🛠️ ADMIN COMMAND SYSTEM (Oct 16, 2025)
@@ -97,6 +98,44 @@ const CHANNEL_ID = process.env.DISCORD_CHANNEL_ID;
 const HEARTBEAT_LOG_CHANNEL_ID = process.env.HEARTBEAT_LOG_CHANNEL_ID;
 const MESSAGE_REPLY_TRUNCATE_LENGTH = 100;
 const ENABLE_TIMER = process.env.ENABLE_TIMER === 'true';
+function getChannelContextLimit() {
+    const contextLen = (0, env_js_1.getModelContextLength)();
+    const tokensPerMessage = (0, env_js_1.getContextTokensPerMessage)();
+    const derived = Math.floor(contextLen / Math.max(1, tokensPerMessage));
+    return Math.max(5, Math.min(120, derived));
+}
+async function buildChannelContext(message) {
+    const channel = message.channel;
+    if (!channel || !channel.messages || typeof channel.messages.fetch !== 'function') {
+        return null;
+    }
+    try {
+        const limit = getChannelContextLimit();
+        const fetched = await channel.messages.fetch({ limit });
+        const ordered = Array.from(fetched.values()).sort((a, b) => a.createdTimestamp - b.createdTimestamp);
+        const lines = ordered.map((msg) => {
+            const author = msg.author?.username || msg.author?.id || 'unknown';
+            let content = (msg.content || '').trim();
+            if (content) {
+                content = content.replace(/https?:\/\/\S+/gi, "[link]");
+            }
+            if (!content && msg.attachments?.size > 0) {
+                content = `[attachment x${msg.attachments.size}]`;
+            }
+            else if (content && msg.attachments?.size > 0) {
+                content = `${content} [attachment x${msg.attachments.size}]`;
+            }
+            if (!content)
+                content = '[no text]';
+            return `${author}: ${content}`;
+        });
+        return lines.join('\n');
+    }
+    catch (err) {
+        console.warn('⚠️ Failed to build channel context:', err instanceof Error ? err.message : err);
+        return null;
+    }
+}
 // 💰 TIME-BASED HEARTBEAT CONFIG (Oct 2025 - Credit-optimized)
 // Different intervals and probabilities based on time of day
 // Now properly saves credits because API is only called when probability succeeds!
@@ -213,6 +252,9 @@ client.once('ready', async () => {
 // Helper function to send a message and receive a response
 async function processAndSendMessage(message, messageType, conversationContext = null, customContent = null) {
     try {
+        if (message?.channel?.sendTyping) {
+            await message.channel.sendTyping();
+        }
         const msg = await (0, messages_1.sendMessage)(message, messageType, conversationContext, customContent);
         if (msg !== "") {
             // 🔒 Record that bot replied (for pingpong tracking)
@@ -371,9 +413,13 @@ client.on('messageCreate', async (message) => {
             console.log(`🔒 Not responding: ${decision.reason}`);
             return;
         }
-        // Save context to pass to Letta (only for Channels, NOT for DMs!)
-        const isDM = message.guild === null;
-        conversationContext = (!isDM && decision.context) ? decision.context : null;
+        const channelContext = await buildChannelContext(message);
+        if (decision.context && channelContext) {
+            conversationContext = `${channelContext}\n\n[Autonomous Context]\n${decision.context}`;
+        }
+        else {
+            conversationContext = channelContext || decision.context || null;
+        }
         console.log(`🔒 Responding: ${decision.reason}`);
     }
     else {
@@ -382,6 +428,7 @@ client.on('messageCreate', async (message) => {
             console.log(`📩 Ignoring other bot...`);
             return;
         }
+        conversationContext = await buildChannelContext(message);
     }
     // 📄 FILE CHUNK REQUEST HANDLER (Nov 20, 2025)
     // Check for file chunk requests BEFORE YouTube chunk requests
@@ -398,6 +445,9 @@ client.on('messageCreate', async (message) => {
         }
         else if (message.mentions.has(client.user || '') || message.reference) {
             messageType = messages_1.MessageType.MENTION;
+        }
+        if (message?.channel?.sendTyping) {
+            await message.channel.sendTyping();
         }
         const msg = await (0, messages_1.sendMessage)(message, messageType, conversationContext, fileChunkResponse);
         if (msg !== "") {
@@ -440,6 +490,9 @@ client.on('messageCreate', async (message) => {
         }
         else if (message.mentions.has(client.user || '') || message.reference) {
             messageType = messages_1.MessageType.MENTION;
+        }
+        if (message?.channel?.sendTyping) {
+            await message.channel.sendTyping();
         }
         const msg = await (0, messages_1.sendMessage)(message, messageType, conversationContext, chunkResponse);
         if (msg !== "") {
@@ -540,6 +593,9 @@ client.on('messageCreate', async (message) => {
         // If content was modified (transcript added), send with custom content
         if (processedContent) {
             console.log('📺 Transcript(s) attached to message - sending to Letta');
+        }
+        if (message?.channel?.sendTyping) {
+            await message.channel.sendTyping();
         }
         const msg = await (0, messages_1.sendMessage)(message, messageType, conversationContext, processedContent);
         if (msg !== "") {

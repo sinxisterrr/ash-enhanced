@@ -1,0 +1,59 @@
+"use strict";
+//--------------------------------------------------------------
+// FILE: src/transcription/whisper.ts
+// OpenAI Whisper transcription helper
+//--------------------------------------------------------------
+var __importDefault = (this && this.__importDefault) || function (mod) {
+    return (mod && mod.__esModule) ? mod : { "default": mod };
+};
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.transcribeAudioFromUrl = transcribeAudioFromUrl;
+const axios_1 = __importDefault(require("axios"));
+const form_data_1 = __importDefault(require("form-data"));
+const logger_js_1 = require("../utils/logger.js");
+const WHISPER_API_URL = "https://api.openai.com/v1/audio/transcriptions";
+async function transcribeAudioFromUrl(url, filename, contentType) {
+    const apiKey = process.env.OPENAI_API_KEY || "";
+    const model = process.env.WHISPER_MODEL || "whisper-1";
+    if (!apiKey) {
+        logger_js_1.logger.warn("Whisper transcription skipped: OPENAI_API_KEY not set.");
+        return null;
+    }
+    try {
+        const audioResp = await axios_1.default.get(url, {
+            responseType: "arraybuffer",
+            timeout: 30000,
+        });
+        const audioBuffer = Buffer.from(audioResp.data);
+        const maxBytes = parseInt(process.env.MAX_AUDIO_ATTACHMENT_BYTES || "15000000", 10);
+        if (audioBuffer.length > maxBytes) {
+            logger_js_1.logger.warn(`Voice note too large (${audioBuffer.length} bytes). Limit=${maxBytes}. Skipping transcription.`);
+            return null;
+        }
+        const form = new form_data_1.default();
+        form.append("file", audioBuffer, {
+            filename: filename || "voice-note.ogg",
+            contentType: contentType || "audio/ogg",
+        });
+        form.append("model", model);
+        const resp = await axios_1.default.post(WHISPER_API_URL, form, {
+            headers: {
+                Authorization: `Bearer ${apiKey}`,
+                ...form.getHeaders(),
+            },
+            timeout: 120000,
+        });
+        const text = resp.data?.text;
+        if (typeof text === "string" && text.trim().length > 0) {
+            return text.trim();
+        }
+        return null;
+    }
+    catch (err) {
+        const msg = err?.response?.data
+            ? JSON.stringify(err.response.data)
+            : err?.message || String(err);
+        logger_js_1.logger.warn(`Whisper transcription failed: ${msg}`);
+        return null;
+    }
+}

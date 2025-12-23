@@ -1,8 +1,12 @@
 "use strict";
 // FILE: src/memory/memoryStore.ts
 //--------------------------------------------------------------
+var __importDefault = (this && this.__importDefault) || function (mod) {
+    return (mod && mod.__esModule) ? mod : { "default": mod };
+};
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.CORE_TRAITS = exports.CORE_VOWS = void 0;
+exports.preloadFileMemory = preloadFileMemory;
 exports.mergeLTM = mergeLTM;
 exports.saveLTM = saveLTM;
 exports.loadLTM = loadLTM;
@@ -13,12 +17,20 @@ exports.loadTraits = loadTraits;
 exports.getTraitsCache = getTraitsCache;
 const logger_js_1 = require("../utils/logger.js");
 const memoryDb_js_1 = require("./memoryDb.js");
+const path_1 = __importDefault(require("path"));
+const file_js_1 = require("../utils/file.js");
+const dataImport_js_1 = require("./dataImport.js");
 const BOT_ID = process.env.BOT_ID || "DEFAULT";
+const DATA_DIR = path_1.default.join(process.cwd(), "data");
+const LTM_PATH = path_1.default.join(DATA_DIR, "ltm.json");
+const TRAITS_PATH = path_1.default.join(DATA_DIR, "traits.json");
 //--------------------------------------------------------------
 // INTERNAL CACHES (per bot, per user)
 //--------------------------------------------------------------
 let LTM_CACHE = {};
 let TRAITS_CACHE = {};
+let FILE_LTM_CACHE = null;
+let FILE_TRAITS_CACHE = null;
 function ensureCache(botId, userId) {
     if (!LTM_CACHE[botId])
         LTM_CACHE[botId] = {};
@@ -89,6 +101,51 @@ exports.CORE_TRAITS = [
     "checks in when uncertain",
     "warm, grounded, and present",
 ];
+function normalizeLtmEntry(entry) {
+    if (!entry || typeof entry.summary !== "string")
+        return null;
+    return {
+        summary: entry.summary.trim(),
+        type: entry.type ?? "misc",
+        enabled: entry.enabled ?? true,
+        source: entry.source ?? "file",
+        tags: Array.isArray(entry.tags) ? entry.tags : [],
+        createdAt: entry.createdAt ?? Date.now(),
+        ...entry,
+    };
+}
+async function loadLtmFromFiles() {
+    if (FILE_LTM_CACHE)
+        return FILE_LTM_CACHE;
+    const raw = await (0, file_js_1.readJSON)(LTM_PATH, []);
+    const normalized = raw
+        .map(normalizeLtmEntry)
+        .filter((m) => !!m && m.summary.length > 0);
+    FILE_LTM_CACHE = normalized;
+    return normalized;
+}
+async function loadTraitsFromFiles() {
+    if (FILE_TRAITS_CACHE)
+        return FILE_TRAITS_CACHE;
+    const raw = await (0, file_js_1.readJSON)(TRAITS_PATH, []);
+    FILE_TRAITS_CACHE = Array.isArray(raw) ? raw.filter((t) => typeof t === "string") : [];
+    return FILE_TRAITS_CACHE;
+}
+async function preloadFileMemory() {
+    const ltmFromFiles = await loadLtmFromFiles();
+    const traitsFromFiles = await loadTraitsFromFiles();
+    const imported = await (0, dataImport_js_1.importDataFiles)();
+    if (imported.length > 0) {
+        FILE_LTM_CACHE = mergeLTM(ltmFromFiles, imported);
+        logger_js_1.logger.info(`📚 Imported ${imported.length} memory entries from data/*.txt`);
+    }
+    if (FILE_LTM_CACHE && FILE_LTM_CACHE.length > 0) {
+        logger_js_1.logger.info(`📚 File LTM ready (${FILE_LTM_CACHE.length} entries).`);
+    }
+    if (traitsFromFiles.length > 0) {
+        logger_js_1.logger.info(`📚 File traits ready (${traitsFromFiles.length} entries).`);
+    }
+}
 //--------------------------------------------------------------
 // MERGE LTM
 //--------------------------------------------------------------
@@ -144,17 +201,22 @@ async function loadLTM(userId) {
     // If store has data, use it
     if (row?.ltm && Array.isArray(row.ltm) && row.ltm.length > 0) {
         const loaded = row.ltm;
-        const merged = mergeLTM([], loaded);
+        const fileLTM = FILE_LTM_CACHE ?? await loadLtmFromFiles();
+        const merged = mergeLTM(fileLTM, loaded);
         LTM_CACHE[BOT_ID][userId] = merged;
-        logger_js_1.logger.info(`📚 Loaded ${merged.length} memories from Postgres for user ${userId}`);
+        logger_js_1.logger.info(`📚 Loaded ${merged.length} memories (db + data) for user ${userId}`);
         return merged;
     }
     const seedRow = await (0, memoryDb_js_1.getBotMemoryRow)(BOT_ID, SEED_USER_ID);
     const seedLTM = seedRow?.ltm ?? [];
-    const fallbackLTM = mergeLTM([], seedLTM);
+    const fileLTM = seedLTM.length > 0 ? [] : (FILE_LTM_CACHE ?? await loadLtmFromFiles());
+    const fallbackLTM = mergeLTM([], seedLTM.length > 0 ? seedLTM : fileLTM);
+    if (fileLTM.length > 0) {
+        logger_js_1.logger.info(`📚 Loaded ${fileLTM.length} memories from data/ltm.json`);
+    }
     const payload = buildBotMemoryRow(userId, {
         ltm: fallbackLTM,
-        traits: seedRow?.traits ?? exports.CORE_TRAITS,
+        traits: seedRow?.traits ?? (await loadTraitsFromFiles()) ?? exports.CORE_TRAITS,
     });
     try {
         await (0, memoryDb_js_1.upsertBotMemoryRow)(payload);
@@ -198,9 +260,14 @@ async function loadTraits(userId) {
     ensureCache(BOT_ID, userId);
     const row = await (0, memoryDb_js_1.getBotMemoryRow)(BOT_ID, userId);
     if (!row?.traits || row.traits.length === 0) {
+        const fileTraits = FILE_TRAITS_CACHE ?? await loadTraitsFromFiles();
+        const mergedTraits = fileTraits.length > 0 ? fileTraits : exports.CORE_TRAITS;
+        if (fileTraits.length > 0) {
+            logger_js_1.logger.info(`📚 Loaded ${fileTraits.length} traits from data/traits.json`);
+        }
         const payload = buildBotMemoryRow(userId, {
             ltm: row?.ltm ?? exports.CORE_VOWS,
-            traits: exports.CORE_TRAITS,
+            traits: mergedTraits,
         });
         try {
             await (0, memoryDb_js_1.upsertBotMemoryRow)(payload);
@@ -208,10 +275,11 @@ async function loadTraits(userId) {
         catch (err) {
             logger_js_1.logger.error(`Failed to seed traits in Postgres for user ${userId}`, err);
         }
-        TRAITS_CACHE[BOT_ID][userId] = exports.CORE_TRAITS;
-        return exports.CORE_TRAITS;
+        TRAITS_CACHE[BOT_ID][userId] = mergeTraits([], mergedTraits);
+        return TRAITS_CACHE[BOT_ID][userId];
     }
-    const merged = mergeTraits([], row.traits ?? []);
+    const fileTraits = FILE_TRAITS_CACHE ?? await loadTraitsFromFiles();
+    const merged = mergeTraits(fileTraits, row.traits ?? []);
     TRAITS_CACHE[BOT_ID][userId] = merged;
     return merged;
 }

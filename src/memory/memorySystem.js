@@ -5,6 +5,7 @@
 //--------------------------------------------------------------
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.DISTILL_INTERVAL = void 0;
+exports.setMaxStmEntries = setMaxStmEntries;
 exports.addToSTM = addToSTM;
 exports.getSTM = getSTM;
 exports.initMemorySystem = initMemorySystem;
@@ -14,13 +15,21 @@ exports.getTraits = getTraits;
 exports.addManualMemory = addManualMemory;
 exports.recallRelevantMemories = recallRelevantMemories;
 const Llm_js_1 = require("../model/Llm.js");
+const emotionalDistillation_js_1 = require("./emotionalDistillation.js");
 const memoryStore_js_1 = require("./memoryStore.js");
 const blockMemory_js_1 = require("./blockMemory.js");
 const logger_js_1 = require("../utils/logger.js");
 const memoryDb_js_1 = require("./memoryDb.js");
 const memoryStore_js_2 = require("./memoryStore.js");
 let STM = [];
-const MAX_STM_ENTRIES = 30;
+let MAX_STM_ENTRIES = 30;
+function setMaxStmEntries(maxEntries) {
+    const next = Math.max(5, Math.min(200, Math.floor(maxEntries)));
+    MAX_STM_ENTRIES = next;
+    if (STM.length > MAX_STM_ENTRIES) {
+        STM = STM.slice(-MAX_STM_ENTRIES);
+    }
+}
 function addToSTM(role, text) {
     if (!text)
         return;
@@ -46,6 +55,8 @@ exports.DISTILL_INTERVAL = 12;
 async function initMemorySystem() {
     await (0, memoryDb_js_1.initMemoryDatabase)();
     await (0, memoryDb_js_1.seedMemoryDatabaseFromFiles)(process.env.BOT_ID || "DEFAULT", "__seed__", memoryStore_js_2.CORE_TRAITS);
+    // Preload file-backed memory before first response
+    await (0, memoryStore_js_1.preloadFileMemory)();
     // Initialize block memories (archival, human, persona)
     await (0, blockMemory_js_1.initBlockMemories)();
     const [archival, human, persona] = await Promise.all([
@@ -119,6 +130,58 @@ function safeParse(raw) {
         return [];
     }
 }
+function normKey(summary) {
+    return (summary || "")
+        .toLowerCase()
+        .replace(/\s+/g, " ")
+        .replace(/[^\p{L}\p{N}\s]/gu, "")
+        .trim();
+}
+function mergeMemory(a, b) {
+    // b overwrites a for emotional fields + any missing metadata
+    return {
+        ...a,
+        ...b,
+        // Keep enabled/source/createdAt sane
+        enabled: a.enabled ?? b.enabled ?? true,
+        source: b.source || a.source || "distilled",
+        createdAt: Math.max(a.createdAt || 0, b.createdAt || 0) || Date.now(),
+        // Merge tags uniquely
+        tags: Array.from(new Set([...(a.tags || []), ...(b.tags || [])])),
+        // Emotional fields prefer b if present
+        emotionalValence: b.emotionalValence ?? a.emotionalValence,
+        intensity: b.intensity ?? a.intensity,
+        relationalWeight: b.relationalWeight ?? a.relationalWeight,
+        texture: b.texture ?? a.texture,
+        conversationContext: b.conversationContext ?? a.conversationContext,
+        sinsTone: b.sinsTone ?? a.sinsTone,
+        ashsResponse: b.ashsResponse ?? a.ashsResponse,
+        ghostSinTouch: b.ghostSinTouch ?? a.ghostSinTouch,
+    };
+}
+function mergeDistilled(durable, emotional) {
+    // Emotional wins on overlap.
+    const map = new Map();
+    for (const m of durable) {
+        const key = normKey(m.summary);
+        if (!key)
+            continue;
+        map.set(key, m);
+    }
+    for (const m of emotional) {
+        const key = normKey(m.summary);
+        if (!key)
+            continue;
+        const existing = map.get(key);
+        if (!existing) {
+            map.set(key, m);
+        }
+        else {
+            map.set(key, mergeMemory(existing, m));
+        }
+    }
+    return Array.from(map.values());
+}
 //--------------------------------------------------------------
 // maybeDistill - Now returns extracted memories for notification
 //--------------------------------------------------------------
@@ -128,31 +191,27 @@ async function maybeDistill(userId) {
     DISTILL_BUFFER.push(...recentSTM);
     if (DISTILL_BUFFER.length < exports.DISTILL_INTERVAL)
         return [];
+    // inside maybeDistill(), right after the DISTILL_BUFFER length check
     try {
         const prompt = buildDistillPrompt(DISTILL_BUFFER);
         const raw = await (0, Llm_js_1.generateModelOutput)(prompt);
-        const extracted = safeParse(raw);
+        const durable = safeParse(raw);
+        // Emotional pass (separate call, higher nuance)
+        const emotional = await (0, emotionalDistillation_js_1.distillWithEmotion)(DISTILL_BUFFER);
+        // Merge + dedupe (emotional fields win)
+        const extracted = mergeDistilled(durable, emotional);
+        // If nothing durable emerged, do NOT write noise
         if (extracted.length === 0) {
-            await (0, memoryStore_js_1.saveLTM)(userId, [
-                ...(0, memoryStore_js_1.getLTMCache)(userId),
-                {
-                    summary: "Memory gap detected — Ashriel must ask Sile directly.",
-                    type: "system",
-                    enabled: true,
-                    source: "system",
-                    createdAt: Date.now(),
-                },
-            ]);
             DISTILL_BUFFER = [];
             return [];
         }
-        const merged = await (0, memoryStore_js_1.saveLTM)(userId, [
+        await (0, memoryStore_js_1.saveLTM)(userId, [
             ...(0, memoryStore_js_1.getLTMCache)(userId),
             ...extracted,
         ]);
-        logger_js_1.logger.info(`✨ Distilled ${extracted.length} new memories (LTM now ${merged.length})`);
+        logger_js_1.logger.info(`✨ Distilled ${extracted.length} memories`);
         DISTILL_BUFFER = [];
-        return extracted; // Return for notification
+        return extracted;
     }
     catch (err) {
         logger_js_1.logger.error("Distillation failed:", err);
@@ -205,35 +264,51 @@ function tokenize(text) {
         .split(/\s+/)
         .filter((w) => w && w.length > 2 && !STOP_WORDS.has(w));
 }
-function scoreRelevance(query, summary, tags = [], type) {
-    const queryTokens = new Set(tokenize(query));
+function scoreRelevanceDetailed(query, summary, tags = [], type) {
+    const queryTokensArr = tokenize(query);
+    const queryTokens = new Set(queryTokensArr);
     const summaryTokens = tokenize(summary);
     if (queryTokens.size === 0)
-        return 0;
+        return { score: 0, reasons: [], matchedTokens: [] };
     let score = 0;
+    const reasons = [];
+    const matchedTokens = [];
     // Token overlap scoring
-    const matchedTokens = summaryTokens.filter(t => queryTokens.has(t));
-    score += matchedTokens.length * 2;
-    // Exact phrase matching (very strong signal)
+    const overlap = summaryTokens.filter((t) => queryTokens.has(t));
+    if (overlap.length > 0) {
+        score += overlap.length * 2;
+        reasons.push("token-overlap");
+        matchedTokens.push(...overlap.slice(0, 10));
+    }
+    // Exact phrase matching (strong signal)
     const queryLower = query.toLowerCase().trim();
     const summaryLower = summary.toLowerCase();
     if (queryLower.length > 5 && summaryLower.includes(queryLower)) {
         score += 15;
+        reasons.push("exact-phrase");
     }
     // Partial phrase matching
-    const queryWords = queryLower.split(/\s+/).filter(w => w.length > 3);
+    const queryWords = queryLower.split(/\s+/).filter((w) => w.length > 3);
+    let partialHits = 0;
     for (const phrase of queryWords) {
-        if (phrase.length > 4 && summaryLower.includes(phrase)) {
-            score += 3;
-        }
+        if (phrase.length > 4 && summaryLower.includes(phrase))
+            partialHits++;
     }
-    // Tag matching (strong signal for categorized memories)
+    if (partialHits > 0) {
+        score += partialHits * 3;
+        reasons.push("partial-phrase");
+    }
+    // Tag matching
     if (tags && tags.length > 0) {
-        const tagSet = new Set(tags.map(t => t.toLowerCase()));
+        const tagSet = new Set(tags.map((t) => t.toLowerCase()));
+        let tagHits = 0;
         for (const qt of queryTokens) {
-            if (tagSet.has(qt)) {
-                score += 5;
-            }
+            if (tagSet.has(qt))
+                tagHits++;
+        }
+        if (tagHits > 0) {
+            score += tagHits * 5;
+            reasons.push("tag-match");
         }
     }
     // Type relevance
@@ -241,40 +316,58 @@ function scoreRelevance(query, summary, tags = [], type) {
         const typeLower = type.toLowerCase();
         if (queryLower.includes(typeLower) || typeLower.includes(queryLower)) {
             score += 3;
+            reasons.push("type-match");
         }
     }
-    // Density bonus (higher concentration of matches = more relevant)
-    if (summaryTokens.length > 0) {
-        const density = matchedTokens.length / summaryTokens.length;
+    // Density bonus
+    if (summaryTokens.length > 0 && overlap.length > 0) {
+        const density = overlap.length / summaryTokens.length;
         score += density * 5;
+        reasons.push("density");
     }
-    return score;
+    return { score, reasons, matchedTokens: Array.from(new Set(matchedTokens)) };
 }
 async function recallRelevantMemories(userId, query, limit = 6) {
     const ltm = (0, memoryStore_js_1.getLTMCache)(userId);
     if (!query || query.trim().length === 0) {
-        // No query - return most recent memories
+        // No query - return most recent memories (annotated)
         return ltm
-            .filter(m => m.enabled)
+            .filter((m) => m.enabled)
             .sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0))
-            .slice(0, limit);
+            .slice(0, limit)
+            .map((m) => ({
+            ...m,
+            recall: { score: 0.5, reasons: ["recency"] },
+        }));
     }
     const scored = ltm
         .filter((m) => m.enabled)
-        .map(m => ({
-        memory: m,
-        score: scoreRelevance(query, m.summary, m.tags, m.type)
-    }))
-        .filter(s => s.score > 0)
+        .map((m) => {
+        const { score, reasons, matchedTokens } = scoreRelevanceDetailed(query, m.summary, m.tags, m.type);
+        return { memory: m, score, reasons, matchedTokens };
+    })
+        .filter((s) => s.score > 0)
         .sort((a, b) => {
         if (b.score !== a.score)
             return b.score - a.score;
-        // Tie-breaker: more recent memories
         return (b.memory.createdAt || 0) - (a.memory.createdAt || 0);
     })
         .slice(0, limit);
     if (process.env.MEMORY_DEBUG === "true") {
-        logger_js_1.logger.debug(`🔍 Recall: query="${query}" found ${scored.length} matches:`, scored.map(s => ({ score: s.score.toFixed(1), summary: s.memory.summary.slice(0, 60) })));
+        logger_js_1.logger.debug(`🔍 Recall: query="${query}" found ${scored.length} matches:`, scored.map((s) => ({
+            score: s.score.toFixed(1),
+            reasons: s.reasons,
+            summary: s.memory.summary.slice(0, 60),
+        })));
     }
-    return scored.map(s => s.memory);
+    // IMPORTANT: read-only behavior — we return annotated copies,
+    // but we do NOT write these annotations back to disk.
+    return scored.map((s) => ({
+        ...s.memory,
+        recall: {
+            score: s.score,
+            reasons: s.reasons,
+            matchedTokens: s.matchedTokens,
+        },
+    }));
 }
