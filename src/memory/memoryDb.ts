@@ -182,7 +182,7 @@ export async function upsertArchivalMemories(memories: ArchivalMemory[]) {
           mem.content,
           mem.category ?? null,
           mem.importance ?? null,
-          mem.timestamp ?? null,
+          mem.timestamp ? Math.floor(mem.timestamp) : null,
           toJsonValue(mem.tags),
           toJsonValue(mem.metadata),
         ]
