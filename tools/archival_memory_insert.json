@@ -4,6 +4,10 @@
   "parameters": {
     "type": "object",
     "properties": {
+      "reason": {
+        "type": "string",
+        "description": "One sentence: why this memory operation is being performed."
+      },
       "content": {
         "type": "string",
         "description": "The information to store. Should be clear and self-contained."

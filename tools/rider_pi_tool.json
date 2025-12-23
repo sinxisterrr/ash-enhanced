@@ -25,6 +25,10 @@
         ],
         "description": "Einzelne Action ODER 'sequence' für mehrere Actions hintereinander. Demo-Bewegungen: glueckliches_wackeln, auf_und_ab_wackeln, vor_und_zurueck_rollen, achten_fahren, kreis_drehen, happy_dance. Steuerung: adjust_height, adjust_roll, balance_mode, periodic_squat, periodic_shake, reset. Batch: sequence (braucht sequence-Liste), list_actions"
       },
+      "intent": {
+        "type": "string",
+        "description": "One sentence: why this action is being performed."
+      },
       "height": {
         "type": "integer",
         "minimum": 75,

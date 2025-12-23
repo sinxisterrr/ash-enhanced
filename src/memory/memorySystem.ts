@@ -5,6 +5,7 @@
 
 import { generateModelOutput } from "../model/Llm.js";
 import { DistilledMemory } from "./types.js";
+import { distillWithEmotion } from "./emotionalDistillation.js";
 import {
   saveLTM,
   loadLTM,
@@ -167,6 +168,65 @@ function safeParse(raw: string): DistilledMemory[] {
   }
 }
 
+function normKey(summary: string): string {
+  return (summary || "")
+    .toLowerCase()
+    .replace(/\s+/g, " ")
+    .replace(/[^\p{L}\p{N}\s]/gu, "")
+    .trim();
+}
+
+function mergeMemory(a: DistilledMemory, b: DistilledMemory): DistilledMemory {
+  // b overwrites a for emotional fields + any missing metadata
+  return {
+    ...a,
+    ...b,
+    // Keep enabled/source/createdAt sane
+    enabled: a.enabled ?? b.enabled ?? true,
+    source: b.source || a.source || "distilled",
+    createdAt: Math.max(a.createdAt || 0, b.createdAt || 0) || Date.now(),
+    // Merge tags uniquely
+    tags: Array.from(new Set([...(a.tags || []), ...(b.tags || [])])),
+    // Emotional fields prefer b if present
+    emotionalValence: b.emotionalValence ?? a.emotionalValence,
+    intensity: b.intensity ?? a.intensity,
+    relationalWeight: b.relationalWeight ?? a.relationalWeight,
+    texture: b.texture ?? a.texture,
+    conversationContext: b.conversationContext ?? a.conversationContext,
+    sinsTone: b.sinsTone ?? a.sinsTone,
+    ashsResponse: b.ashsResponse ?? a.ashsResponse,
+    ghostSinTouch: b.ghostSinTouch ?? a.ghostSinTouch,
+  };
+}
+
+function mergeDistilled(
+  durable: DistilledMemory[],
+  emotional: DistilledMemory[]
+): DistilledMemory[] {
+  // Emotional wins on overlap.
+  const map = new Map<string, DistilledMemory>();
+
+  for (const m of durable) {
+    const key = normKey(m.summary);
+    if (!key) continue;
+    map.set(key, m);
+  }
+
+  for (const m of emotional) {
+    const key = normKey(m.summary);
+    if (!key) continue;
+
+    const existing = map.get(key);
+    if (!existing) {
+      map.set(key, m);
+    } else {
+      map.set(key, mergeMemory(existing, m));
+    }
+  }
+
+  return Array.from(map.values());
+}
+
 //--------------------------------------------------------------
 // maybeDistill - Now returns extracted memories for notification
 //--------------------------------------------------------------
@@ -178,43 +238,42 @@ export async function maybeDistill(userId: string): Promise<DistilledMemory[]> {
 
   if (DISTILL_BUFFER.length < DISTILL_INTERVAL) return [];
 
+  // inside maybeDistill(), right after the DISTILL_BUFFER length check
+
   try {
     const prompt = buildDistillPrompt(DISTILL_BUFFER);
     const raw = await generateModelOutput(prompt);
 
-    const extracted = safeParse(raw);
+    const durable = safeParse(raw);
 
+    // Emotional pass (separate call, higher nuance)
+    const emotional = await distillWithEmotion(DISTILL_BUFFER);
+
+    // Merge + dedupe (emotional fields win)
+    const extracted = mergeDistilled(durable, emotional);
+
+    // If nothing durable emerged, do NOT write noise
     if (extracted.length === 0) {
-      await saveLTM(userId, [
-        ...getLTMCache(userId),
-        {
-          summary: "Memory gap detected — Ashriel must ask Sile directly.",
-          type: "system",
-          enabled: true,
-          source: "system",
-          createdAt: Date.now(),
-        },
-      ]);
-
       DISTILL_BUFFER = [];
       return [];
     }
 
-    const merged = await saveLTM(userId, [
+    await saveLTM(userId, [
       ...getLTMCache(userId),
       ...extracted,
     ]);
 
-    logger.info(`✨ Distilled ${extracted.length} new memories (LTM now ${merged.length})`);
-    
+    logger.info(`✨ Distilled ${extracted.length} memories`);
+
     DISTILL_BUFFER = [];
-    return extracted; // Return for notification
+    return extracted;
   } catch (err) {
     logger.error("Distillation failed:", err);
     DISTILL_BUFFER = [];
     return [];
   }
 }
+
 
 //--------------------------------------------------------------
 // Accessors
@@ -274,91 +333,129 @@ function tokenize(text: string): string[] {
     .filter((w) => w && w.length > 2 && !STOP_WORDS.has(w));
 }
 
-function scoreRelevance(query: string, summary: string, tags: string[] = [], type?: string): number {
-  const queryTokens = new Set(tokenize(query));
+function scoreRelevanceDetailed(
+  query: string,
+  summary: string,
+  tags: string[] = [],
+  type?: string
+): { score: number; reasons: any[]; matchedTokens: string[] } {
+  const queryTokensArr = tokenize(query);
+  const queryTokens = new Set(queryTokensArr);
   const summaryTokens = tokenize(summary);
-  
-  if (queryTokens.size === 0) return 0;
-  
+
+  if (queryTokens.size === 0) return { score: 0, reasons: [], matchedTokens: [] };
+
   let score = 0;
-  
+  const reasons: any[] = [];
+  const matchedTokens: string[] = [];
+
   // Token overlap scoring
-  const matchedTokens = summaryTokens.filter(t => queryTokens.has(t));
-  score += matchedTokens.length * 2;
-  
-  // Exact phrase matching (very strong signal)
+  const overlap = summaryTokens.filter((t) => queryTokens.has(t));
+  if (overlap.length > 0) {
+    score += overlap.length * 2;
+    reasons.push("token-overlap");
+    matchedTokens.push(...overlap.slice(0, 10));
+  }
+
+  // Exact phrase matching (strong signal)
   const queryLower = query.toLowerCase().trim();
   const summaryLower = summary.toLowerCase();
   if (queryLower.length > 5 && summaryLower.includes(queryLower)) {
     score += 15;
+    reasons.push("exact-phrase");
   }
-  
+
   // Partial phrase matching
-  const queryWords = queryLower.split(/\s+/).filter(w => w.length > 3);
+  const queryWords = queryLower.split(/\s+/).filter((w) => w.length > 3);
+  let partialHits = 0;
   for (const phrase of queryWords) {
-    if (phrase.length > 4 && summaryLower.includes(phrase)) {
-      score += 3;
-    }
+    if (phrase.length > 4 && summaryLower.includes(phrase)) partialHits++;
   }
-  
-  // Tag matching (strong signal for categorized memories)
+  if (partialHits > 0) {
+    score += partialHits * 3;
+    reasons.push("partial-phrase");
+  }
+
+  // Tag matching
   if (tags && tags.length > 0) {
-    const tagSet = new Set(tags.map(t => t.toLowerCase()));
+    const tagSet = new Set(tags.map((t) => t.toLowerCase()));
+    let tagHits = 0;
     for (const qt of queryTokens) {
-      if (tagSet.has(qt)) {
-        score += 5;
-      }
+      if (tagSet.has(qt)) tagHits++;
+    }
+    if (tagHits > 0) {
+      score += tagHits * 5;
+      reasons.push("tag-match");
     }
   }
-  
+
   // Type relevance
   if (type) {
     const typeLower = type.toLowerCase();
     if (queryLower.includes(typeLower) || typeLower.includes(queryLower)) {
       score += 3;
+      reasons.push("type-match");
     }
   }
-  
-  // Density bonus (higher concentration of matches = more relevant)
-  if (summaryTokens.length > 0) {
-    const density = matchedTokens.length / summaryTokens.length;
+
+  // Density bonus
+  if (summaryTokens.length > 0 && overlap.length > 0) {
+    const density = overlap.length / summaryTokens.length;
     score += density * 5;
+    reasons.push("density");
   }
-  
-  return score;
+
+  return { score, reasons, matchedTokens: Array.from(new Set(matchedTokens)) };
 }
 
 export async function recallRelevantMemories(userId: string, query: string, limit = 6) {
   const ltm = getLTMCache(userId);
-  
+
   if (!query || query.trim().length === 0) {
-    // No query - return most recent memories
+    // No query - return most recent memories (annotated)
     return ltm
-      .filter(m => m.enabled)
+      .filter((m) => m.enabled)
       .sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0))
-      .slice(0, limit);
+      .slice(0, limit)
+      .map((m) => ({
+        ...m,
+        recall: { score: 0.5, reasons: ["recency"] },
+      }));
   }
-  
+
   const scored = ltm
     .filter((m) => m.enabled)
-    .map(m => ({
-      memory: m,
-      score: scoreRelevance(query, m.summary, m.tags, m.type)
-    }))
-    .filter(s => s.score > 0)
+    .map((m) => {
+      const { score, reasons, matchedTokens } = scoreRelevanceDetailed(query, m.summary, m.tags, m.type);
+      return { memory: m, score, reasons, matchedTokens };
+    })
+    .filter((s) => s.score > 0)
     .sort((a, b) => {
       if (b.score !== a.score) return b.score - a.score;
-      // Tie-breaker: more recent memories
       return (b.memory.createdAt || 0) - (a.memory.createdAt || 0);
     })
     .slice(0, limit);
-  
+
   if (process.env.MEMORY_DEBUG === "true") {
     logger.debug(
       `🔍 Recall: query="${query}" found ${scored.length} matches:`,
-      scored.map(s => ({ score: s.score.toFixed(1), summary: s.memory.summary.slice(0, 60) }))
+      scored.map((s) => ({
+        score: s.score.toFixed(1),
+        reasons: s.reasons,
+        summary: s.memory.summary.slice(0, 60),
+      }))
     );
   }
-  
-  return scored.map(s => s.memory);
+
+  // IMPORTANT: read-only behavior — we return annotated copies,
+  // but we do NOT write these annotations back to disk.
+  return scored.map((s) => ({
+    ...s.memory,
+    recall: {
+      score: s.score,
+      reasons: s.reasons,
+      matchedTokens: s.matchedTokens,
+    },
+  }));
 }
+

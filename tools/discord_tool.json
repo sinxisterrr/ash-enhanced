@@ -19,6 +19,10 @@
         ],
         "description": "\ud83d\udea8 MANDATORY: Use execute_batch for ALL operations (even single operations can use batch mode!). Use manage_tasks for task operations (list/delete/create together). SINGLE ACTIONS ARE DEPRECATED - only use if you have EXACTLY ONE operation that cannot be combined with anything else: send_message (PROACTIVE only - NOT conversation!), read_messages, list_guilds, create_task, delete_task, list_tasks. CRITICAL: If you need to do 2+ operations, you MUST use execute_batch! Single-action calls waste API credits. Use standard send_message tool for conversation responses, NOT this tool!"
       },
+      "intent": {
+        "type": "string",
+        "description": "One sentence: why this action is being performed."
+      },
       "message": {
         "type": "string",
         "description": "PROACTIVE message content to send during heartbeats or scheduled tasks (required for send_message action). Auto-chunks messages over 2000 characters. WARNING: Do NOT use this for conversation responses - use standard send_message tool instead!"

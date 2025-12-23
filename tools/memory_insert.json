@@ -4,6 +4,10 @@
   "parameters": {
     "type": "object",
     "properties": {
+      "reason": {
+        "type": "string",
+        "description": "One sentence: why this memory operation is being performed."
+      },
       "label": {
         "type": "string",
         "description": "Section of the memory to be edited, identified by its label."

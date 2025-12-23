@@ -1,23 +1,69 @@
 //--------------------------------------------------------------
 // FILE: src/tools/executor.ts
 // Tool Executor - executes Python tool scripts
+// Ash-move-in: safe spawn (no shell quoting), optional retry,
+//              debug dumps, post-execution hooks
 //--------------------------------------------------------------
 
-import { exec } from "child_process";
-import { promisify } from "util";
+import { spawn } from "child_process";
+import fs from "fs";
+import path from "path";
+import { randomUUID } from "crypto";
 import { ToolCall, ToolResult } from "./types.js";
 import { toolRegistry } from "./registry.js";
 import { logger } from "../utils/logger.js";
 
-const execAsync = promisify(exec);
+type ToolHook = (toolCall: ToolCall, result: ToolResult) => void | Promise<void>;
+
+function ensureToolCallId(toolCall: ToolCall): string {
+  return toolCall.id ?? randomUUID();
+}
+
+function shouldRetry(): boolean {
+  return (process.env.TOOL_RETRY || "").toLowerCase() === "true";
+}
+
+function debugEnabled(): boolean {
+  return (process.env.DEBUG || "").toLowerCase() === "true";
+}
+
+function needsReason(toolName: string) {
+  return toolName.startsWith("memory_") ||
+    toolName.startsWith("core_memory_") ||
+    toolName.startsWith("archival_memory_");
+}
+
+function needsIntent(toolName: string) {
+  return toolName === "send_voice_message" ||
+    toolName === "discord_tool" ||
+    toolName === "rider_pi_tool";
+}
 
 export class ToolExecutor {
+  private hooks: ToolHook[] = [];
+
+  addHook(fn: ToolHook) {
+    this.hooks.push(fn);
+  }
+
   async executeTool(toolCall: ToolCall): Promise<ToolResult> {
+    const toolCallId = ensureToolCallId(toolCall);
     const tool = toolRegistry.getTool(toolCall.name);
+    const args = toolCall.arguments ?? {};
+
+    if (needsReason(toolCall.name) && typeof args.reason !== "string") {
+      return { tool_call_id: toolCall.id, tool_name: toolCall.name, success: false,
+        result: "Missing required field: reason", error: "Missing reason" };
+    }
+
+    if (needsIntent(toolCall.name) && typeof args.intent !== "string") {
+      return { tool_call_id: toolCall.id, tool_name: toolCall.name, success: false,
+        result: "Missing required field: intent", error: "Missing intent" };
+    }
 
     if (!tool) {
       return {
-        tool_call_id: toolCall.id,
+        tool_call_id: toolCallId,
         tool_name: toolCall.name,
         result: `Error: Tool '${toolCall.name}' not found`,
         success: false,
@@ -25,52 +71,73 @@ export class ToolExecutor {
       };
     }
 
+    let result: ToolResult;
+
     // If tool has Python script, execute it
     if (tool.pythonScript) {
-      return await this.executePythonTool(toolCall, tool.pythonScript);
+      let attempt = 1;
+      result = await this.executePythonTool({ ...toolCall, id: toolCallId }, tool.pythonScript, attempt);
+
+      // Optional single retry
+      if (!result.success && shouldRetry()) {
+        attempt = 2;
+        logger.warn(`⚠️  Retrying tool ${toolCall.name} (attempt ${attempt})`);
+        result = await this.executePythonTool({ ...toolCall, id: toolCallId }, tool.pythonScript, attempt);
+      }
+    } else {
+      // If no Python script, handle built-in tools
+      result = await this.executeBuiltInTool({ ...toolCall, id: toolCallId });
     }
 
-    // If no Python script, handle built-in tools
-    return await this.executeBuiltInTool(toolCall);
+    await this.runHooks({ ...toolCall, id: toolCallId }, result);
+    return result;
   }
 
-  private async executePythonTool(
-    toolCall: ToolCall,
-    scriptPath: string
-  ): Promise<ToolResult> {
+  private async executePythonTool(toolCall: ToolCall, scriptPath: string, attempt: number): Promise<ToolResult> {
+    const toolCallId = ensureToolCallId(toolCall);
+
     try {
-      logger.info(`🔧 Executing Python tool: ${toolCall.name}`);
+      logger.info(`🔧 Executing Python tool: ${toolCall.name} (attempt ${attempt})`);
 
-      // Prepare arguments as JSON string
-      const argsJson = JSON.stringify(toolCall.arguments);
-      const escapedArgs = argsJson.replace(/"/g, '\\"');
+      const argsJson = JSON.stringify(toolCall.arguments ?? {});
+      const { stdout, stderr, exitCode, signal } = await this.spawnPython(scriptPath, argsJson, 60000);
 
-      // Execute Python script with arguments
-      const command = `python3 "${scriptPath}" '${argsJson}'`;
-
-      const { stdout, stderr } = await execAsync(command, {
-        timeout: 60000, // 60 second timeout
-        maxBuffer: 10 * 1024 * 1024, // 10MB buffer
-      });
-
-      if (stderr && !stderr.includes("warning")) {
+      if (stderr && !/warning/i.test(stderr)) {
         logger.warn(`⚠️  Tool ${toolCall.name} stderr:`, stderr);
       }
 
-      const result = stdout.trim();
-      logger.info(`✅ Tool ${toolCall.name} completed`);
+      if (debugEnabled()) {
+        this.debugDump(toolCall, scriptPath, argsJson, stdout, stderr, exitCode, signal, attempt);
+      }
 
+      if (exitCode !== 0) {
+        const msg = `Tool exited with code ${exitCode}${signal ? ` (signal ${signal})` : ""}`;
+        logger.error(`❌ Tool ${toolCall.name} failed: ${msg}`);
+        return {
+          tool_call_id: toolCallId,
+          tool_name: toolCall.name,
+          result: `Error executing tool: ${msg}`,
+          success: false,
+          error: msg,
+        };
+      }
+
+      logger.info(`✅ Tool ${toolCall.name} completed`);
       return {
-        tool_call_id: toolCall.id,
+        tool_call_id: toolCallId,
         tool_name: toolCall.name,
-        result,
+        result: stdout.trim(),
         success: true,
       };
     } catch (err: any) {
       logger.error(`❌ Tool ${toolCall.name} failed:`, err);
 
+      if (debugEnabled()) {
+        this.debugDump(toolCall, scriptPath, JSON.stringify(toolCall.arguments ?? {}), "", err?.message || String(err), -1, null, attempt);
+      }
+
       return {
-        tool_call_id: toolCall.id,
+        tool_call_id: toolCallId,
         tool_name: toolCall.name,
         result: `Error executing tool: ${err.message}`,
         success: false,
@@ -79,16 +146,52 @@ export class ToolExecutor {
     }
   }
 
+  private spawnPython(
+    scriptPath: string,
+    argsJson: string,
+    timeoutMs: number
+  ): Promise<{ stdout: string; stderr: string; exitCode: number; signal: NodeJS.Signals | null }> {
+    return new Promise((resolve, reject) => {
+      // No shell = no quoting bugs. Python sees argv[1] as the JSON string.
+      const child = spawn("python3", [scriptPath, argsJson], {
+        stdio: ["ignore", "pipe", "pipe"],
+      });
+
+      let stdout = "";
+      let stderr = "";
+
+      const killTimer = setTimeout(() => {
+        child.kill("SIGKILL");
+      }, timeoutMs);
+
+      child.stdout.on("data", (d) => (stdout += d.toString("utf-8")));
+      child.stderr.on("data", (d) => (stderr += d.toString("utf-8")));
+
+      child.on("error", (err) => {
+        clearTimeout(killTimer);
+        reject(err);
+      });
+
+      child.on("close", (code, signal) => {
+        clearTimeout(killTimer);
+        resolve({
+          stdout,
+          stderr,
+          exitCode: typeof code === "number" ? code : -1,
+          signal,
+        });
+      });
+    });
+  }
+
   private async executeBuiltInTool(toolCall: ToolCall): Promise<ToolResult> {
-    // Handle built-in tools that don't need Python scripts
-    // (e.g., memory operations that are handled in TypeScript)
+    const toolCallId = ensureToolCallId(toolCall);
 
     switch (toolCall.name) {
       case "conversation_search":
       case "archival_memory_search":
-        // These could be handled by your memory system
         return {
-          tool_call_id: toolCall.id,
+          tool_call_id: toolCallId,
           tool_name: toolCall.name,
           result: "Built-in tool not yet implemented",
           success: false,
@@ -97,7 +200,7 @@ export class ToolExecutor {
 
       default:
         return {
-          tool_call_id: toolCall.id,
+          tool_call_id: toolCallId,
           tool_name: toolCall.name,
           result: `Unknown built-in tool: ${toolCall.name}`,
           success: false,
@@ -108,13 +211,62 @@ export class ToolExecutor {
 
   async executeTools(toolCalls: ToolCall[]): Promise<ToolResult[]> {
     const results: ToolResult[] = [];
-
     for (const toolCall of toolCalls) {
-      const result = await this.executeTool(toolCall);
-      results.push(result);
+      results.push(await this.executeTool(toolCall));
     }
-
     return results;
+  }
+
+  private async runHooks(toolCall: ToolCall, result: ToolResult) {
+    if (this.hooks.length === 0) return;
+    for (const hook of this.hooks) {
+      try {
+        await hook(toolCall, result);
+      } catch (e) {
+        logger.warn(`⚠️  ToolExecutor hook failed:`, e);
+      }
+    }
+  }
+
+  private debugDump(
+    toolCall: ToolCall,
+    scriptPath: string,
+    argsJson: string,
+    stdout: string,
+    stderr: string,
+    exitCode: number,
+    signal: NodeJS.Signals | null,
+    attempt: number
+  ) {
+    try {
+      const dir = path.join(process.cwd(), "debug", "tools");
+      fs.mkdirSync(dir, { recursive: true });
+
+      const ts = new Date().toISOString().replace(/[:.]/g, "-");
+      const file = path.join(dir, `tool_${toolCall.name}_${ts}_attempt${attempt}.log`);
+
+      const dump = [
+        `=== TOOL CALL: ${toolCall.name} @ ${ts} (attempt ${attempt}) ===`,
+        `tool_call_id: ${toolCall.id}`,
+        `script: ${scriptPath}`,
+        `exitCode: ${exitCode}`,
+        `signal: ${signal ?? ""}`,
+        ``,
+        `--- ARGUMENTS JSON ---`,
+        argsJson,
+        ``,
+        `--- STDOUT ---`,
+        stdout,
+        ``,
+        `--- STDERR ---`,
+        stderr,
+        ``,
+      ].join("\n");
+
+      fs.writeFileSync(file, dump, "utf-8");
+    } catch (e) {
+      logger.warn("Failed to write tool debug dump:", e);
+    }
   }
 }
 

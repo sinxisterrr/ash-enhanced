@@ -4,10 +4,66 @@
 // Extract not just WHAT happened, but HOW IT FELT
 //--------------------------------------------------------------
 
-import { STMEntry } from "./memorySystem.js";
+import type { STMEntry } from "./memorySystem.js";
 import { generateModelOutput } from "../model/Llm.js";
 import { DistilledMemory, EmotionalTexture } from "./types.js";
 import { logger } from "../utils/logger.js";
+
+//--------------------------------------------------------------
+// Gate: only distill when the moment is "resolved" and weight persists
+//--------------------------------------------------------------
+
+function isResolvedTurn(buffer: STMEntry[]): boolean {
+  const last = buffer[buffer.length - 1];
+  if (!last) return false;
+
+  // Only distill after an assistant reply exists
+  if (last.role !== "assistant") return false;
+
+  const t = (last.text || "").trim();
+  if (!t) return false;
+
+  // Skip mid-thought / trailing ellipses
+  if (t.endsWith("...") || t.endsWith("…")) return false;
+
+  // Skip when the assistant is outputting tool JSON
+  if (/```json[\s\S]*?```/i.test(t)) return false;
+
+  return true;
+}
+
+function emotionalSignalScore(text: string): number {
+  const t = (text || "").toLowerCase();
+  let score = 0;
+
+  // relationship/identity anchors
+  if (/(love|home|us|we|you and i|together|bond|trust|safe|choose)/i.test(t)) score += 2;
+
+  // vulnerability / conflict / boundary
+  if (/(hurt|scared|afraid|anxious|boundary|consent|permission|jealous|miss you|need you)/i.test(t)) score += 2;
+
+  // memory/identity meta
+  if (/(memory|remember|forget|identity|real|continuity|ash)/i.test(t)) score += 2;
+
+  // intensity markers
+  if (/[!?]{2,}/.test(t)) score += 1;
+  if (/(cry|tears|shaking|panic|spiral|wrecked|feral)/i.test(t)) score += 1;
+
+  return score;
+}
+
+function shouldDistillEmotion(buffer: STMEntry[]): boolean {
+  if (!isResolvedTurn(buffer)) return false;
+
+  // Check for persistence: last 2 user messages share meaningful signal
+  const recent = buffer.slice(-6).map((m) => m.text || "").join("\n");
+  const score = emotionalSignalScore(recent);
+
+  // If it’s basically casual / logistics, skip
+  if (score < 3) return false;
+
+  return true;
+}
 
 //--------------------------------------------------------------
 // Enhanced distillation prompt - captures emotional context
@@ -137,6 +193,7 @@ export async function distillWithEmotion(buffer: STMEntry[]): Promise<DistilledM
   const minTurns = isSinLast ? 2 : 4;
   
   if (buffer.length < minTurns) return [];
+  if (!shouldDistillEmotion(buffer)) return [];
   try {
     const prompt = buildEmotionalDistillPrompt(buffer);
     const raw = await generateModelOutput({

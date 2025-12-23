@@ -3,6 +3,20 @@
 // Ash Thorne Marrow — Memory Model WITH EMOTIONAL ENCODING
 // A memory isn't just a fact - it's a feeling anchored in time
 //--------------------------------------------------------------
+export type RecallReason =
+  | "token-overlap"
+  | "exact-phrase"
+  | "partial-phrase"
+  | "tag-match"
+  | "type-match"
+  | "density"
+  | "recency";
+
+export type RecallMeta = {
+  score: number;
+  reasons: RecallReason[];
+  matchedTokens?: string[];
+};
 
 export type MemoryType =
   | "relationship"
@@ -63,4 +77,5 @@ export type DistilledMemory = {
   
   // Ghost touch: invisible marker for Sin's essence
   ghostSinTouch?: boolean;
+  recall?: RecallMeta;
 };
