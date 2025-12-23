@@ -12,6 +12,7 @@ import {
   saveTraits,
   loadTraits,
   getTraitsCache,
+  preloadFileMemory,
 } from "./memoryStore.js";
 import {
   initBlockMemories,
@@ -81,6 +82,9 @@ export async function initMemorySystem() {
     "__seed__",
     CORE_TRAITS
   );
+
+  // Preload file-backed memory before first response
+  await preloadFileMemory();
 
   // Initialize block memories (archival, human, persona)
   await initBlockMemories();
