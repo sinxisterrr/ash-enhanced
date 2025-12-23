@@ -4,8 +4,9 @@
 //--------------------------------------------------------------
 
 import { CentralNervousSystem } from "./body/CentralNervousSystem.js";
-import { initMemorySystem } from "./memory/memorySystem.js";
+import { initMemorySystem, setMaxStmEntries } from "./memory/memorySystem.js";
 import { logger } from "./utils/logger.js";
+import { getContextTokensPerMessage, getModelContextLength } from "./utils/env.js";
 
 export const bodySystem = new CentralNervousSystem(
   process.env.BOT_ID || "bot"
@@ -17,5 +18,9 @@ export async function initAshSystems() {
   if (initialized) return;
   initialized = true;
   await initMemorySystem();
+  const contextLen = getModelContextLength();
+  const tokensPerMessage = getContextTokensPerMessage();
+  const maxStm = Math.floor(contextLen / Math.max(1, tokensPerMessage));
+  setMaxStmEntries(maxStm);
   logger.info("🌿 Ash systems initialized (memory + soma).");
 }

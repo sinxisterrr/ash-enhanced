@@ -23,6 +23,8 @@ export interface BrainPacket {
   personaBlocks?: MemoryBlock[];
   conversationContext?: string;
   toolResults?: string;
+  voiceNoteCount?: number;
+  voiceTargetHint?: string;
   authorId: string;
   authorName: string;
 }

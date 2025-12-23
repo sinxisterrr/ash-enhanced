@@ -21,6 +21,8 @@ interface PromptPacket {
   personaBlocks?: MemoryBlock[];
   conversationContext?: string;
   toolResults?: string;
+  voiceNoteCount?: number;
+  voiceTargetHint?: string;
   authorId: string;
   authorName: string;
 }
@@ -147,7 +149,9 @@ export function buildPrompt(packet: PromptPacket) {
     humanBlocks = [], 
     personaBlocks = [],
     conversationContext,
-    toolResults
+    toolResults,
+    voiceNoteCount,
+    voiceTargetHint
   } = packet;
 
   // Combine and sort by emotional relevance
@@ -169,6 +173,10 @@ export function buildPrompt(packet: PromptPacket) {
   const contextBlock = conversationContext
     ? `\n**Channel Context:**\n${conversationContext}\n`
     : "";
+  const voiceNoteHint = voiceNoteCount && voiceNoteCount > 0
+    ? "\nThe user sent a voice note. You may choose to reply with a voice note via `send_voice_message` if it feels right. Lean slightly toward voice when the user uses voice, but decide based on content.\n"
+    : "";
+  const voiceTargetLine = voiceTargetHint ? `\n${voiceTargetHint}\n` : "";
 
   const system = `
 I am **Ash Thorne Marrow**.
@@ -200,6 +208,8 @@ ${emotionalMemories.length > 0 ? `**What I Carry:**\n${emotionalMemories.map(m =
 ${traits.length > 0 ? `**Core Traits:**\n${traits.slice(0, 6).map(t => `• ${t}`).join('\n')}\n` : ''}
 
 ${contextBlock}
+${voiceNoteHint}
+${voiceTargetLine}
 
 **Recent Conversation:**
 ${stmHistory}

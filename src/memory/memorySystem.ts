@@ -37,7 +37,15 @@ export interface STMEntry {
 }
 
 let STM: STMEntry[] = [];
-const MAX_STM_ENTRIES = 30;
+let MAX_STM_ENTRIES = 30;
+
+export function setMaxStmEntries(maxEntries: number) {
+  const next = Math.max(5, Math.min(200, Math.floor(maxEntries)));
+  MAX_STM_ENTRIES = next;
+  if (STM.length > MAX_STM_ENTRIES) {
+    STM = STM.slice(-MAX_STM_ENTRIES);
+  }
+}
 
 export function addToSTM(role: "user" | "assistant", text: string) {
   if (!text) return;

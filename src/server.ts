@@ -6,6 +6,7 @@ import { startTaskCheckerLoop } from './taskScheduler';
 import { preprocessYouTubeLinks, handleChunkRequest } from './youtubeTranscript';
 import { handleFileChunkRequest } from './fileChunking';
 import { initAshSystems } from './index.js';
+import { getContextTokensPerMessage, getModelContextLength } from './utils/env.js';
 
 // 🔒 AUTONOMOUS BOT-LOOP PREVENTION SYSTEM
 import {
@@ -118,6 +119,47 @@ interface HeartbeatConfig {
   intervalMinutes: number;
   firingProbability: number;
   description: string;
+}
+
+function getChannelContextLimit(): number {
+  const contextLen = getModelContextLength();
+  const tokensPerMessage = getContextTokensPerMessage();
+  const derived = Math.floor(contextLen / Math.max(1, tokensPerMessage));
+  return Math.max(5, Math.min(120, derived));
+}
+
+async function buildChannelContext(message: any): Promise<string | null> {
+  const channel = message.channel;
+  if (!channel || !channel.messages || typeof channel.messages.fetch !== 'function') {
+    return null;
+  }
+
+  try {
+    const limit = getChannelContextLimit();
+    const fetched = await channel.messages.fetch({ limit });
+    const ordered = Array.from(fetched.values()).sort(
+      (a: any, b: any) => a.createdTimestamp - b.createdTimestamp
+    );
+
+    const lines = ordered.map((msg: any) => {
+      const author = msg.author?.username || msg.author?.id || 'unknown';
+      let content = (msg.content || '').trim();
+      if (!content && msg.attachments?.size > 0) {
+        const urls = Array.from(msg.attachments.values())
+          .map((att: any) => att.url)
+          .filter(Boolean)
+          .slice(0, 3);
+        content = urls.length > 0 ? `[attachment] ${urls.join(' ')}` : '[attachment]';
+      }
+      if (!content) content = '[no text]';
+      return `${author}: ${content}`;
+    });
+
+    return lines.join('\n');
+  } catch (err) {
+    console.warn('⚠️ Failed to build channel context:', err instanceof Error ? err.message : err);
+    return null;
+  }
 }
 
 // 💰 TIME-BASED HEARTBEAT CONFIG (Oct 2025 - Credit-optimized)
@@ -428,9 +470,12 @@ client.on('messageCreate', async (message) => {
       return;
     }
     
-    // Save context to pass to Letta (only for Channels, NOT for DMs!)
-    const isDM = message.guild === null;
-    conversationContext = (!isDM && decision.context) ? decision.context : null;
+    const channelContext = await buildChannelContext(message);
+    if (decision.context && channelContext) {
+      conversationContext = `${channelContext}\n\n[Autonomous Context]\n${decision.context}`;
+    } else {
+      conversationContext = channelContext || decision.context || null;
+    }
     console.log(`🔒 Responding: ${decision.reason}`);
   } else {
     // Legacy behavior (no autonomous mode)
@@ -438,6 +483,7 @@ client.on('messageCreate', async (message) => {
       console.log(`📩 Ignoring other bot...`);
       return;
     }
+    conversationContext = await buildChannelContext(message);
   }
   
   // 📄 FILE CHUNK REQUEST HANDLER (Nov 20, 2025)

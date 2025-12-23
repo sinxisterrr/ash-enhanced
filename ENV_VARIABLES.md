@@ -24,6 +24,22 @@ DISCORD_BOT_TOKEN=your_discord_bot_token_here
 DISCORD_CHANNEL_ID=your_main_channel_id
 ```
 
+### Transcription (OpenAI Whisper)
+```bash
+OPENAI_API_KEY=your_openai_key
+WHISPER_MODEL=whisper-1
+MAX_AUDIO_ATTACHMENTS=1
+MAX_AUDIO_ATTACHMENT_BYTES=15000000
+```
+
+### Context Window (STM + Channel Context)
+```bash
+OLLAMA_CONTEXT_LENGTH=32768
+OPENAI_CONTEXT_LENGTH=8192
+OPENROUTER_CONTEXT_LENGTH=8192
+CONTEXT_TOKENS_PER_MESSAGE=200
+```
+
 ---
 
 ## 🟡 REQUIRED - Bot Behavior
@@ -150,6 +166,13 @@ TASKS_CHANNEL_ID=
 SPOTIFY_CLIENT_ID=your_spotify_client_id_here
 SPOTIFY_CLIENT_SECRET=your_spotify_client_secret_here
 SPOTIFY_REFRESH_TOKEN=your_spotify_refresh_token_here
+```
+
+### ElevenLabs (Voice Notes)
+```bash
+ELEVENLABS_API_KEY=your_elevenlabs_api_key
+ELEVENLABS_VOICE_ID=your_voice_id
+ELEVENLABS_MODEL_ID=eleven_v3
 ```
 
 ### Weather Integration (Optional)

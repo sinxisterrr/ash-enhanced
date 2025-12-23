@@ -6,6 +6,7 @@ import { Attachment, Message } from "discord.js";
 import { logger } from "../utils/logger.js";
 import { toolExecutor } from "../tools/executor.js";
 import type { ToolCall } from "../tools/types.js";
+import { transcribeAudioFromUrl } from "../transcription/whisper.js";
 
 import {
   addToSTM,
@@ -33,6 +34,13 @@ const TEXT_EXTENSIONS = new Set([
 ]);
 const MAX_ATTACHMENT_BYTES = 200_000;
 const MAX_ATTACHMENT_CHARS = 12_000;
+const AUDIO_EXTENSIONS = new Set([
+  "ogg", "mp3", "wav", "m4a", "mp4", "webm", "aac", "flac"
+]);
+const MAX_AUDIO_ATTACHMENTS = parseInt(
+  process.env.MAX_AUDIO_ATTACHMENTS || "1",
+  10
+);
 
 function hasTextExtension(filename: string | null) {
   if (!filename) return false;
@@ -46,6 +54,16 @@ function isTextAttachment(att: Attachment) {
   const contentType = att.contentType?.toLowerCase() ?? "";
   if (contentType.startsWith("text/")) return true;
   return hasTextExtension(att.name ?? null);
+}
+
+function isAudioAttachment(att: Attachment) {
+  const contentType = att.contentType?.toLowerCase() ?? "";
+  if (contentType.startsWith("audio/")) return true;
+  const name = att.name ?? "";
+  const dot = name.lastIndexOf(".");
+  if (dot === -1) return false;
+  const ext = name.slice(dot + 1).toLowerCase();
+  return AUDIO_EXTENSIONS.has(ext);
 }
 
 async function readTextAttachments(message: Message) {
@@ -88,6 +106,32 @@ async function readTextAttachments(message: Message) {
     text: parts.join("\n\n"),
     skipped,
   };
+}
+
+async function transcribeAudioAttachments(message: Message) {
+  const transcripts: string[] = [];
+  let processed = 0;
+
+  for (const att of message.attachments.values()) {
+    if (processed >= MAX_AUDIO_ATTACHMENTS) break;
+    if (!isAudioAttachment(att)) continue;
+
+    try {
+      const text = await transcribeAudioFromUrl(
+        att.url,
+        att.name ?? "voice-note.ogg",
+        att.contentType ?? undefined
+      );
+      if (text) {
+        transcripts.push(text);
+        processed += 1;
+      }
+    } catch {
+      continue;
+    }
+  }
+
+  return transcripts;
 }
 
 type HandleMessageOptions = {
@@ -221,7 +265,18 @@ export async function handleMessage(
     ? await readTextAttachments(message)
     : { text: "", skipped: [] as string[] };
 
-  const userText = [baseText, attachmentText].filter(Boolean).join("\n\n");
+  const audioTranscripts = includeAttachments
+    ? await transcribeAudioAttachments(message)
+    : [];
+  const audioText = audioTranscripts.length > 0
+    ? audioTranscripts
+        .map((t, i) => `[Voice Note ${i + 1} Transcript]\n${t}`)
+        .join("\n\n")
+    : "";
+
+  const userText = [baseText, attachmentText, audioText]
+    .filter(Boolean)
+    .join("\n\n");
   if (!userText) {
     if (message.attachments.size > 0) {
       const notice = skipped.length > 0
@@ -292,6 +347,11 @@ export async function handleMessage(
     );
   }
 
+  const isDm = !message.guildId;
+  const voiceTargetHint = isDm
+    ? `If you call send_voice_message, use target_type="user" and target="${message.author.id}".`
+    : `If you call send_voice_message, use target_type="channel" and target="${message.channel.id}".`;
+
   const packet = {
     userText,
     stm: historyBeforeUser,
@@ -302,6 +362,8 @@ export async function handleMessage(
     humanBlocks,
     personaBlocks,
     conversationContext: options.conversationContext ?? undefined,
+    voiceNoteCount: audioTranscripts.length,
+    voiceTargetHint,
     authorId: message.author.id,
     authorName: message.author.id,  // ← Use ID instead of username
   };
