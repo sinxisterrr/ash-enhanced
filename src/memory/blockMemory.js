@@ -183,7 +183,8 @@ async function searchArchivalMemories(query, limit = 5) {
         .slice(0, limit)
         .map((s) => s.memory);
 }
-async function searchHumanBlocks(query, limit = 3) {
+async function searchHumanBlocks(query, limit = 3, skipRelevanceFilter = false // For boot: load blocks without requiring keyword matches
+) {
     const blocks = await loadHumanBlocks();
     if (blocks.length === 0)
         return [];
@@ -192,12 +193,18 @@ async function searchHumanBlocks(query, limit = 3) {
         score: calculateRelevance(query, block.content),
     }));
     scored.sort((a, b) => b.score - a.score);
+    // If skipRelevanceFilter (boot mode), return top N by score even if score is 0
+    if (skipRelevanceFilter) {
+        return scored.slice(0, limit).map((s) => s.block);
+    }
+    // Normal mode: only return blocks with score > 0
     return scored
         .filter((s) => s.score > 0)
         .slice(0, limit)
         .map((s) => s.block);
 }
-async function searchPersonaBlocks(query, limit = 3) {
+async function searchPersonaBlocks(query, limit = 3, skipRelevanceFilter = false // For boot: load blocks without requiring keyword matches
+) {
     const blocks = await loadPersonaBlocks();
     if (blocks.length === 0)
         return [];
@@ -206,6 +213,11 @@ async function searchPersonaBlocks(query, limit = 3) {
         score: calculateRelevance(query, block.content),
     }));
     scored.sort((a, b) => b.score - a.score);
+    // If skipRelevanceFilter (boot mode), return top N by score even if score is 0
+    if (skipRelevanceFilter) {
+        return scored.slice(0, limit).map((s) => s.block);
+    }
+    // Normal mode: only return blocks with score > 0
     return scored
         .filter((s) => s.score > 0)
         .slice(0, limit)

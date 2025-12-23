@@ -151,9 +151,6 @@ export function buildPrompt(packet: PromptPacket) {
 
   const voiceTargetLine = voiceTargetHint ? `\n${voiceTargetHint}\n` : "";
 
-  // Tools as text (for local models)
-  const toolsText = toolRegistry.getToolsAsText();
-
   // Category-specific modifications
   const categoryModBlock = categoryPromptModifications
     ? `\n[Context-Specific Behavior]\n${categoryPromptModifications}\n`
@@ -197,8 +194,6 @@ Tool-use protocol:
 - Only output a tool call when you truly need it.
 - When calling a tool, output ONLY a \`\`\`json\`\`\` block (no extra text around it).
 - Otherwise, never output JSON blocks.
-
-${toolsText ? `\n${toolsText}\n` : ""}
 `.trim();
 
   // Convert STM into proper chat messages (huge model quality upgrade)

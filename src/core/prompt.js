@@ -6,7 +6,6 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.buildPrompt = buildPrompt;
 const index_js_1 = require("../index.js");
-const registry_js_1 = require("../tools/registry.js");
 //--------------------------------------------------------------
 // Emotional Memory Formatting
 //--------------------------------------------------------------
@@ -96,8 +95,6 @@ function buildPrompt(packet) {
         ? "\nThe user sent a voice note. You may choose to reply with a voice note via `send_voice_message` if it feels right.\n"
         : "";
     const voiceTargetLine = voiceTargetHint ? `\n${voiceTargetHint}\n` : "";
-    // Tools as text (for local models)
-    const toolsText = registry_js_1.toolRegistry.getToolsAsText();
     // Category-specific modifications
     const categoryModBlock = categoryPromptModifications
         ? `\n[Context-Specific Behavior]\n${categoryPromptModifications}\n`
@@ -140,8 +137,6 @@ Tool-use protocol:
 - Only output a tool call when you truly need it.
 - When calling a tool, output ONLY a \`\`\`json\`\`\` block (no extra text around it).
 - Otherwise, never output JSON blocks.
-
-${toolsText ? `\n${toolsText}\n` : ""}
 `.trim();
     // Convert STM into proper chat messages (huge model quality upgrade)
     const historyMessages = (stm || []).slice(-18).map((m) => ({

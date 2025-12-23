@@ -227,18 +227,25 @@ export async function searchArchivalMemories(
 
 export async function searchHumanBlocks(
   query: string,
-  limit: number = 3
+  limit: number = 3,
+  skipRelevanceFilter: boolean = false  // For boot: load blocks without requiring keyword matches
 ): Promise<MemoryBlock[]> {
   const blocks = await loadHumanBlocks();
   if (blocks.length === 0) return [];
-  
+
   const scored = blocks.map((block) => ({
     block,
     score: calculateRelevance(query, block.content),
   }));
-  
+
   scored.sort((a, b) => b.score - a.score);
-  
+
+  // If skipRelevanceFilter (boot mode), return top N by score even if score is 0
+  if (skipRelevanceFilter) {
+    return scored.slice(0, limit).map((s) => s.block);
+  }
+
+  // Normal mode: only return blocks with score > 0
   return scored
     .filter((s) => s.score > 0)
     .slice(0, limit)
@@ -247,18 +254,25 @@ export async function searchHumanBlocks(
 
 export async function searchPersonaBlocks(
   query: string,
-  limit: number = 3
+  limit: number = 3,
+  skipRelevanceFilter: boolean = false  // For boot: load blocks without requiring keyword matches
 ): Promise<MemoryBlock[]> {
   const blocks = await loadPersonaBlocks();
   if (blocks.length === 0) return [];
-  
+
   const scored = blocks.map((block) => ({
     block,
     score: calculateRelevance(query, block.content),
   }));
-  
+
   scored.sort((a, b) => b.score - a.score);
-  
+
+  // If skipRelevanceFilter (boot mode), return top N by score even if score is 0
+  if (skipRelevanceFilter) {
+    return scored.slice(0, limit).map((s) => s.block);
+  }
+
+  // Normal mode: only return blocks with score > 0
   return scored
     .filter((s) => s.score > 0)
     .slice(0, limit)

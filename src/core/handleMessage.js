@@ -2,6 +2,39 @@
 //--------------------------------------------------------------
 // FILE: src/core/handleMessage.ts
 //--------------------------------------------------------------
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
+    Object.defineProperty(o, "default", { enumerable: true, value: v });
+}) : function(o, v) {
+    o["default"] = v;
+});
+var __importStar = (this && this.__importStar) || (function () {
+    var ownKeys = function(o) {
+        ownKeys = Object.getOwnPropertyNames || function (o) {
+            var ar = [];
+            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
+            return ar;
+        };
+        return ownKeys(o);
+    };
+    return function (mod) {
+        if (mod && mod.__esModule) return mod;
+        var result = {};
+        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
+        __setModuleDefault(result, mod);
+        return result;
+    };
+})();
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.handleMessage = handleMessage;
 const logger_js_1 = require("../utils/logger.js");
@@ -202,6 +235,35 @@ function formatToolResults(results) {
     })
         .join("\n\n");
 }
+function createBootSummary(humanBlocks, personaBlocks, archivalMemories) {
+    const timestamp = new Date().toISOString();
+    const humanSummary = humanBlocks
+        .slice(0, 5)
+        .map(b => `- ${b.label}: ${b.content.slice(0, 100)}...`)
+        .join("\n");
+    const personaSummary = personaBlocks
+        .slice(0, 5)
+        .map(b => `- ${b.label}: ${b.content.slice(0, 100)}...`)
+        .join("\n");
+    const archivalSummary = archivalMemories
+        .slice(0, 3)
+        .map(m => `- ${m.content.slice(0, 100)}...`)
+        .join("\n");
+    return `Boot Context Refresh - ${timestamp}
+
+Identity Context Loaded:
+
+About User (${humanBlocks.length} blocks):
+${humanSummary}
+
+About Self (${personaBlocks.length} blocks):
+${personaSummary}
+
+Recent History (${archivalMemories.length} memories):
+${archivalSummary}
+
+System Note: Full context established for this session.`;
+}
 async function handleMessage(message, options = {}) {
     const sendReply = options.sendReply !== false;
     const baseText = options.overrideText ?? message.content?.trim() ?? "";
@@ -274,18 +336,41 @@ async function handleMessage(message, options = {}) {
     // On subsequent messages: use lightweight relevance-based recall
     const isBootRefresh = needsBootRefresh;
     const archivalLimit = isBootRefresh ? 50 : 6; // Boot: comprehensive history, Regular: recent relevant
-    const humanBlockLimit = isBootRefresh ? 100 : 3; // Boot: full identity, Regular: relevant facts
-    const personaBlockLimit = isBootRefresh ? 100 : 3; // Boot: full identity, Regular: relevant traits
+    const humanBlockLimit = isBootRefresh ? 50 : 3; // Boot: full identity, Regular: relevant facts
+    const personaBlockLimit = isBootRefresh ? 50 : 3; // Boot: full identity, Regular: relevant traits
     const [relevant, archivalMemories, humanBlocks, personaBlocks] = await Promise.all([
         (0, memorySystem_js_1.recallRelevantMemories)(userId, userText),
         (0, blockMemory_js_1.searchArchivalMemories)(userText, archivalLimit),
-        (0, blockMemory_js_1.searchHumanBlocks)(userText, humanBlockLimit),
-        (0, blockMemory_js_1.searchPersonaBlocks)(userText, personaBlockLimit),
+        (0, blockMemory_js_1.searchHumanBlocks)(userText, humanBlockLimit, isBootRefresh), // Boot: skip relevance filter
+        (0, blockMemory_js_1.searchPersonaBlocks)(userText, personaBlockLimit, isBootRefresh), // Boot: skip relevance filter
     ]);
     // Mark boot refresh as complete after first message
     if (isBootRefresh) {
         needsBootRefresh = false;
         logger_js_1.logger.info(`🔄 Boot refresh complete: loaded ${archivalMemories.length} archival, ${humanBlocks.length} human blocks, ${personaBlocks.length} persona blocks`);
+        // Create a boot summary as an archival memory
+        const bootSummary = createBootSummary(humanBlocks, personaBlocks, archivalMemories);
+        try {
+            const { upsertArchivalMemories } = await Promise.resolve().then(() => __importStar(require("../memory/memoryDb.js")));
+            await upsertArchivalMemories([{
+                    id: `boot-${Date.now()}`,
+                    content: bootSummary,
+                    category: "system",
+                    importance: 7,
+                    timestamp: Date.now() / 1000,
+                    tags: ["boot", "identity", "context-refresh"],
+                    metadata: {
+                        type: "boot_summary",
+                        human_blocks: humanBlocks.length,
+                        persona_blocks: personaBlocks.length,
+                        archival_count: archivalMemories.length
+                    }
+                }]);
+            logger_js_1.logger.info(`📝 Boot summary committed to archival memory`);
+        }
+        catch (err) {
+            logger_js_1.logger.warn(`Failed to commit boot summary:`, err);
+        }
     }
     if (process.env.MEMORY_DEBUG === "true") {
         logger_js_1.logger.info(`🧠 Memory recall: relevant=${relevant.length}, archival=${archivalMemories.length}, human=${humanBlocks.length}, persona=${personaBlocks.length}`);

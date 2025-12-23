@@ -258,6 +258,44 @@ function formatToolResults(results: { tool_name: string; result: string; success
     .join("\n\n");
 }
 
+function createBootSummary(
+  humanBlocks: any[],
+  personaBlocks: any[],
+  archivalMemories: any[]
+): string {
+  const timestamp = new Date().toISOString();
+
+  const humanSummary = humanBlocks
+    .slice(0, 5)
+    .map(b => `- ${b.label}: ${b.content.slice(0, 100)}...`)
+    .join("\n");
+
+  const personaSummary = personaBlocks
+    .slice(0, 5)
+    .map(b => `- ${b.label}: ${b.content.slice(0, 100)}...`)
+    .join("\n");
+
+  const archivalSummary = archivalMemories
+    .slice(0, 3)
+    .map(m => `- ${m.content.slice(0, 100)}...`)
+    .join("\n");
+
+  return `Boot Context Refresh - ${timestamp}
+
+Identity Context Loaded:
+
+About User (${humanBlocks.length} blocks):
+${humanSummary}
+
+About Self (${personaBlocks.length} blocks):
+${personaSummary}
+
+Recent History (${archivalMemories.length} memories):
+${archivalSummary}
+
+System Note: Full context established for this session.`;
+}
+
 export async function handleMessage(
   message: Message,
   options: HandleMessageOptions = {}
@@ -342,20 +380,43 @@ export async function handleMessage(
   // On subsequent messages: use lightweight relevance-based recall
   const isBootRefresh = needsBootRefresh;
   const archivalLimit = isBootRefresh ? 50 : 6;   // Boot: comprehensive history, Regular: recent relevant
-  const humanBlockLimit = isBootRefresh ? 100 : 3;  // Boot: full identity, Regular: relevant facts
-  const personaBlockLimit = isBootRefresh ? 100 : 3; // Boot: full identity, Regular: relevant traits
+  const humanBlockLimit = isBootRefresh ? 50 : 3;  // Boot: full identity, Regular: relevant facts
+  const personaBlockLimit = isBootRefresh ? 50 : 3; // Boot: full identity, Regular: relevant traits
 
   const [relevant, archivalMemories, humanBlocks, personaBlocks] = await Promise.all([
     recallRelevantMemories(userId, userText),
     searchArchivalMemories(userText, archivalLimit),
-    searchHumanBlocks(userText, humanBlockLimit),
-    searchPersonaBlocks(userText, personaBlockLimit),
+    searchHumanBlocks(userText, humanBlockLimit, isBootRefresh),  // Boot: skip relevance filter
+    searchPersonaBlocks(userText, personaBlockLimit, isBootRefresh),  // Boot: skip relevance filter
   ]);
 
   // Mark boot refresh as complete after first message
   if (isBootRefresh) {
     needsBootRefresh = false;
     logger.info(`🔄 Boot refresh complete: loaded ${archivalMemories.length} archival, ${humanBlocks.length} human blocks, ${personaBlocks.length} persona blocks`);
+
+    // Create a boot summary as an archival memory
+    const bootSummary = createBootSummary(humanBlocks, personaBlocks, archivalMemories);
+    try {
+      const { upsertArchivalMemories } = await import("../memory/memoryDb.js");
+      await upsertArchivalMemories([{
+        id: `boot-${Date.now()}`,
+        content: bootSummary,
+        category: "system",
+        importance: 7,
+        timestamp: Date.now() / 1000,
+        tags: ["boot", "identity", "context-refresh"],
+        metadata: {
+          type: "boot_summary",
+          human_blocks: humanBlocks.length,
+          persona_blocks: personaBlocks.length,
+          archival_count: archivalMemories.length
+        }
+      }]);
+      logger.info(`📝 Boot summary committed to archival memory`);
+    } catch (err) {
+      logger.warn(`Failed to commit boot summary:`, err);
+    }
   }
 
   if (process.env.MEMORY_DEBUG === "true") {
