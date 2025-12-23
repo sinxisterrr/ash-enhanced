@@ -222,9 +222,10 @@ export async function loadLTM(userId: string) {
   // If store has data, use it
   if (row?.ltm && Array.isArray(row.ltm) && row.ltm.length > 0) {
     const loaded = row.ltm;
-    const merged = mergeLTM([], loaded);
+    const fileLTM = FILE_LTM_CACHE ?? await loadLtmFromFiles();
+    const merged = mergeLTM(fileLTM, loaded);
     LTM_CACHE[BOT_ID][userId] = merged;
-    logger.info(`📚 Loaded ${merged.length} memories from Postgres for user ${userId}`);
+    logger.info(`📚 Loaded ${merged.length} memories (db + data) for user ${userId}`);
     return merged;
   }
 
@@ -319,7 +320,8 @@ export async function loadTraits(userId: string) {
     return TRAITS_CACHE[BOT_ID][userId];
   }
 
-  const merged = mergeTraits([], row.traits ?? []);
+  const fileTraits = FILE_TRAITS_CACHE ?? await loadTraitsFromFiles();
+  const merged = mergeTraits(fileTraits, row.traits ?? []);
 
   TRAITS_CACHE[BOT_ID][userId] = merged;
   return merged;

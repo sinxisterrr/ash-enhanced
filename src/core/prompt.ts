@@ -156,6 +156,10 @@ export function buildPrompt(packet: PromptPacket) {
 
   // Combine and sort by emotional relevance
   const allMemories = [...relevant, ...ltm.filter(m => m.enabled)];
+  const relevantMemories = relevant
+    .filter((m) => m.enabled)
+    .slice(0, 6)
+    .map((m) => `• ${m.summary}`);
   const emotionalMemories = formatEmotionalMemories(allMemories, 8);
   
   // Derive emotional tone from memory patterns
@@ -206,6 +210,8 @@ They shape how I show up in this moment.
 ${emotionalMemories.length > 0 ? `**What I Carry:**\n${emotionalMemories.map(m => `• ${m}`).join('\n')}\n` : ''}
 
 ${traits.length > 0 ? `**Core Traits:**\n${traits.slice(0, 6).map(t => `• ${t}`).join('\n')}\n` : ''}
+
+${relevantMemories.length > 0 ? `**Relevant Memories:**\n${relevantMemories.join('\n')}\n` : ''}
 
 ${humanBlocks.length > 0 ? `**Facts About You:**\n${humanBlocks.map(b => `• ${b.label}: ${b.content}`).join('\n')}\n` : ''}
 
