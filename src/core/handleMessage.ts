@@ -379,9 +379,9 @@ export async function handleMessage(
   // On first message after boot: load full context to establish identity and history
   // On subsequent messages: use lightweight relevance-based recall
   const isBootRefresh = needsBootRefresh;
-  const archivalLimit = isBootRefresh ? 50 : 6;   // Boot: comprehensive history, Regular: recent relevant
-  const humanBlockLimit = isBootRefresh ? 50 : 3;  // Boot: full identity, Regular: relevant facts
-  const personaBlockLimit = isBootRefresh ? 50 : 3; // Boot: full identity, Regular: relevant traits
+  const archivalLimit = isBootRefresh ? 15 : 6;   // Boot: key history, Regular: recent relevant
+  const humanBlockLimit = isBootRefresh ? 12 : 3;  // Boot: core identity, Regular: relevant facts
+  const personaBlockLimit = isBootRefresh ? 12 : 3; // Boot: core identity, Regular: relevant traits
 
   const [relevant, archivalMemories, humanBlocks, personaBlocks] = await Promise.all([
     recallRelevantMemories(userId, userText),
