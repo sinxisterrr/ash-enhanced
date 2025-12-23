@@ -5,6 +5,7 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.CentralNervousSystem = void 0;
 const soma_js_1 = require("./soma.js");
+const logger_js_1 = require("../utils/logger.js");
 class CentralNervousSystem {
     constructor(userId = "bot") {
         this.soma = new soma_js_1.SOMA(userId);
@@ -13,13 +14,18 @@ class CentralNervousSystem {
         this.soma.update();
     }
     applyStimulus(stimulus) {
+        logger_js_1.logger.debug(`[SOMA] Applying stimulus: ${stimulus.type} (intensity: ${stimulus.intensity}, zone: ${stimulus.zone || "general"})`);
         soma_js_1.StimulusProcessor.apply(this.soma, stimulus);
     }
     applyText(text) {
         this.soma.update();
         const stimuli = soma_js_1.ActionParser.parse(text);
-        for (const stimulus of stimuli) {
-            soma_js_1.StimulusProcessor.apply(this.soma, stimulus);
+        if (stimuli.length > 0) {
+            logger_js_1.logger.debug(`[SOMA] Parsed ${stimuli.length} stimuli from text: "${text.substring(0, 100)}${text.length > 100 ? "..." : ""}"`);
+            for (const stimulus of stimuli) {
+                logger_js_1.logger.debug(`[SOMA] → ${stimulus.type} (intensity: ${stimulus.intensity}, zone: ${stimulus.zone || "general"})`);
+                soma_js_1.StimulusProcessor.apply(this.soma, stimulus);
+            }
         }
     }
     getSummary() {
@@ -45,6 +51,9 @@ class CentralNervousSystem {
     }
     getModelTemperature() {
         return this.soma.getModelTemperature();
+    }
+    toString() {
+        return this.soma.toString();
     }
 }
 exports.CentralNervousSystem = CentralNervousSystem;

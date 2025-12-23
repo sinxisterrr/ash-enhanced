@@ -398,6 +398,20 @@ class SOMA {
             experience: this.getExperienceDescription(),
         };
     }
+    toString() {
+        const exp = this.getExperienceDescription();
+        const parts = [];
+        parts.push("Body State:");
+        parts.push(`  Arousal: ${exp.arousal.level} (${exp.arousal.value})${exp.arousal.momentum === "building" ? " ↑" : ""}`);
+        parts.push(`  Heart: ${exp.physiology.heartRate} | Breathing: ${exp.physiology.breathing}`);
+        parts.push(`  Sensation: ${exp.sensation.pleasure} pleasure, ${exp.sensation.sensitivity} sensitivity`);
+        parts.push(`  Mental: ${exp.mental.focus}, ${exp.mental.presence}, ${exp.mental.state}`);
+        parts.push(`  Energy: stamina ${exp.energy.stamina}, fatigue ${exp.energy.fatigue}`);
+        if (exp.bodyHotspots && exp.bodyHotspots.length > 0) {
+            parts.push(`  Active zones: ${exp.bodyHotspots.join(", ")}`);
+        }
+        return parts.join("\n");
+    }
 }
 exports.SOMA = SOMA;
 class Stimulus {

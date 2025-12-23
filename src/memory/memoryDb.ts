@@ -103,6 +103,17 @@ export async function initMemoryDatabase() {
       PRIMARY KEY (block_type, label)
     );
   `);
+
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS category_prompts (
+      category_id TEXT PRIMARY KEY,
+      category_name TEXT,
+      prompt_modifications TEXT NOT NULL,
+      enabled BOOLEAN NOT NULL DEFAULT true,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+  `);
 }
 
 export async function getBotMemoryRow(
@@ -252,6 +263,73 @@ export async function loadMemoryBlocksFromDb(
     [blockType]
   );
   return rows as MemoryBlock[];
+}
+
+export type CategoryPromptConfig = {
+  category_id: string;
+  category_name?: string;
+  prompt_modifications: string;
+  enabled: boolean;
+  created_at?: string;
+  updated_at?: string;
+};
+
+export async function getCategoryPrompt(
+  categoryId: string
+): Promise<CategoryPromptConfig | null> {
+  const db = getPool();
+  if (!db) return null;
+  const { rows } = await db.query(
+    `
+      SELECT category_id, category_name, prompt_modifications, enabled, created_at, updated_at
+      FROM category_prompts
+      WHERE category_id = $1 AND enabled = true
+      LIMIT 1
+    `,
+    [categoryId]
+  );
+
+  return rows[0] ?? null;
+}
+
+export async function upsertCategoryPrompt(config: CategoryPromptConfig) {
+  const db = getPool();
+  if (!db) return;
+  await db.query(
+    `
+      INSERT INTO category_prompts (category_id, category_name, prompt_modifications, enabled, updated_at)
+      VALUES ($1, $2, $3, $4, NOW())
+      ON CONFLICT (category_id)
+      DO UPDATE SET
+        category_name = EXCLUDED.category_name,
+        prompt_modifications = EXCLUDED.prompt_modifications,
+        enabled = EXCLUDED.enabled,
+        updated_at = NOW()
+    `,
+    [
+      config.category_id,
+      config.category_name ?? null,
+      config.prompt_modifications,
+      config.enabled,
+    ]
+  );
+}
+
+export async function listCategoryPrompts(): Promise<CategoryPromptConfig[]> {
+  const db = getPool();
+  if (!db) return [];
+  const { rows } = await db.query(
+    `SELECT category_id, category_name, prompt_modifications, enabled, created_at, updated_at
+     FROM category_prompts
+     ORDER BY category_name, category_id`
+  );
+  return rows as CategoryPromptConfig[];
+}
+
+export async function deleteCategoryPrompt(categoryId: string) {
+  const db = getPool();
+  if (!db) return;
+  await db.query(`DELETE FROM category_prompts WHERE category_id = $1`, [categoryId]);
 }
 
 export async function seedMemoryDatabaseFromFiles(

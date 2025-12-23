@@ -3,6 +3,7 @@
 //--------------------------------------------------------------
 
 import { ActionParser, SOMA, Stimulus, StimulusProcessor } from "./soma.js";
+import { logger } from "../utils/logger.js";
 
 export interface VitalsSummary {
   arousal: number;
@@ -28,14 +29,19 @@ export class CentralNervousSystem {
   }
 
   applyStimulus(stimulus: Stimulus) {
+    logger.debug(`[SOMA] Applying stimulus: ${stimulus.type} (intensity: ${stimulus.intensity}, zone: ${stimulus.zone || "general"})`);
     StimulusProcessor.apply(this.soma, stimulus);
   }
 
   applyText(text: string) {
     this.soma.update();
     const stimuli = ActionParser.parse(text);
-    for (const stimulus of stimuli) {
-      StimulusProcessor.apply(this.soma, stimulus);
+    if (stimuli.length > 0) {
+      logger.debug(`[SOMA] Parsed ${stimuli.length} stimuli from text: "${text.substring(0, 100)}${text.length > 100 ? "..." : ""}"`);
+      for (const stimulus of stimuli) {
+        logger.debug(`[SOMA] → ${stimulus.type} (intensity: ${stimulus.intensity}, zone: ${stimulus.zone || "general"})`);
+        StimulusProcessor.apply(this.soma, stimulus);
+      }
     }
   }
 
@@ -68,6 +74,10 @@ export class CentralNervousSystem {
 
   getModelTemperature() {
     return this.soma.getModelTemperature();
+  }
+
+  toString() {
+    return this.soma.toString();
   }
 }
 

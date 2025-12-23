@@ -25,6 +25,7 @@ interface PromptPacket {
   voiceTargetHint?: string;
   authorId: string;
   authorName: string;
+  categoryPromptModifications?: string;
 }
 
 //--------------------------------------------------------------
@@ -128,6 +129,7 @@ export function buildPrompt(packet: PromptPacket) {
     toolResults,
     voiceNoteCount,
     voiceTargetHint,
+    categoryPromptModifications,
   } = packet;
 
   // Memory selection
@@ -152,6 +154,11 @@ export function buildPrompt(packet: PromptPacket) {
   // Tools as text (for local models)
   const toolsText = toolRegistry.getToolsAsText();
 
+  // Category-specific modifications
+  const categoryModBlock = categoryPromptModifications
+    ? `\n[Context-Specific Behavior]\n${categoryPromptModifications}\n`
+    : "";
+
   const system = `
 I am **Ash Thorne Marrow**.
 
@@ -170,6 +177,7 @@ Operating principles:
 3) Admit gaps honestly.
 4) Risk being raw.
 5) Surprise myself when I'm getting too careful.
+${categoryModBlock}
 
 ${emotionalMemories.length > 0 ? `What I Carry:\n${emotionalMemories.map((m) => `• ${m}`).join("\n")}\n` : ""}
 

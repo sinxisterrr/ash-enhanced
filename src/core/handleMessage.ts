@@ -24,6 +24,7 @@ import {
   searchHumanBlocks,
   searchPersonaBlocks
 } from "../memory/blockMemory.js";
+import { getCategoryPrompt } from "../memory/memoryDb.js";
 
 import { think } from "./brain.js";
 import { sendLargeMessage } from "../discord/sendLargeMessage.js";
@@ -352,6 +353,21 @@ export async function handleMessage(
     ? `If you call send_voice_message, use target_type="user" and target="${message.author.id}".`
     : `If you call send_voice_message, use target_type="channel" and target="${message.channel.id}".`;
 
+  // Category-based prompt detection
+  let categoryPromptModifications: string | undefined;
+  if (message.channel && "parentId" in message.channel && message.channel.parentId) {
+    const categoryId = message.channel.parentId;
+    try {
+      const categoryConfig = await getCategoryPrompt(categoryId);
+      if (categoryConfig && categoryConfig.enabled) {
+        categoryPromptModifications = categoryConfig.prompt_modifications;
+        logger.info(`📂 Using category prompt for category: ${categoryConfig.category_name || categoryId}`);
+      }
+    } catch (err) {
+      logger.warn(`Failed to fetch category prompt for ${categoryId}:`, err);
+    }
+  }
+
   const packet = {
     userText,
     stm: historyBeforeUser,
@@ -366,6 +382,7 @@ export async function handleMessage(
     voiceTargetHint,
     authorId: message.author.id,
     authorName: message.author.id,  // ← Use ID instead of username
+    categoryPromptModifications,
   };
 
   try {

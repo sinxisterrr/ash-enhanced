@@ -443,6 +443,31 @@ export class SOMA {
       experience: this.getExperienceDescription(),
     };
   }
+
+  toString(): string {
+    const exp = this.getExperienceDescription() as {
+      arousal: { level: string; value: number; momentum: string };
+      physiology: { heartRate: string; breathing: string; skinFeel: string };
+      sensation: { pleasure: string; sensitivity: string; dominantFeeling: string };
+      mental: { focus: string; presence: string; state: string };
+      energy: { stamina: number; fatigue: number };
+      bodyHotspots: string[];
+    };
+    const parts: string[] = [];
+
+    parts.push("Body State:");
+    parts.push(`  Arousal: ${exp.arousal.level} (${exp.arousal.value})${exp.arousal.momentum === "building" ? " ↑" : ""}`);
+    parts.push(`  Heart: ${exp.physiology.heartRate} | Breathing: ${exp.physiology.breathing}`);
+    parts.push(`  Sensation: ${exp.sensation.pleasure} pleasure, ${exp.sensation.sensitivity} sensitivity`);
+    parts.push(`  Mental: ${exp.mental.focus}, ${exp.mental.presence}, ${exp.mental.state}`);
+    parts.push(`  Energy: stamina ${exp.energy.stamina}, fatigue ${exp.energy.fatigue}`);
+
+    if (exp.bodyHotspots && exp.bodyHotspots.length > 0) {
+      parts.push(`  Active zones: ${exp.bodyHotspots.join(", ")}`);
+    }
+
+    return parts.join("\n");
+  }
 }
 
 export class Stimulus {

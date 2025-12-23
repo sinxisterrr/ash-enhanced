@@ -12,6 +12,7 @@ import { randomUUID } from "crypto";
 import { ToolCall, ToolResult } from "./types.js";
 import { toolRegistry } from "./registry.js";
 import { logger } from "../utils/logger.js";
+import { sendVoiceMessageViaRest } from "../discord/restSendVoice.js";
 
 type ToolHook = (toolCall: ToolCall, result: ToolResult) => void | Promise<void>;
 
@@ -73,8 +74,11 @@ export class ToolExecutor {
 
     let result: ToolResult;
 
-    // If tool has Python script, execute it
-    if (tool.pythonScript) {
+    // Prefer built-in JS implementation for voice messages (Railway has no python3)
+    if (toolCall.name === "send_voice_message") {
+      result = await this.executeBuiltInTool({ ...toolCall, id: toolCallId });
+    } else if (tool.pythonScript) {
+      // If tool has Python script, execute it
       let attempt = 1;
       result = await this.executePythonTool({ ...toolCall, id: toolCallId }, tool.pythonScript, attempt);
 
@@ -188,6 +192,27 @@ export class ToolExecutor {
     const toolCallId = ensureToolCallId(toolCall);
 
     switch (toolCall.name) {
+      case "send_voice_message": {
+        try {
+          const result = await sendVoiceMessageViaRest(
+            toolCall.arguments as any
+          );
+          return {
+            tool_call_id: toolCallId,
+            tool_name: toolCall.name,
+            result,
+            success: !result.toLowerCase().startsWith("error"),
+          };
+        } catch (err: any) {
+          return {
+            tool_call_id: toolCallId,
+            tool_name: toolCall.name,
+            result: `Error executing tool: ${err.message || String(err)}`,
+            success: false,
+            error: err.message || String(err),
+          };
+        }
+      }
       case "conversation_search":
       case "archival_memory_search":
         return {

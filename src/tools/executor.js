@@ -16,6 +16,7 @@ const path_1 = __importDefault(require("path"));
 const crypto_1 = require("crypto");
 const registry_js_1 = require("./registry.js");
 const logger_js_1 = require("../utils/logger.js");
+const restSendVoice_js_1 = require("../discord/restSendVoice.js");
 function ensureToolCallId(toolCall) {
     return toolCall.id ?? (0, crypto_1.randomUUID)();
 }
@@ -64,8 +65,12 @@ class ToolExecutor {
             };
         }
         let result;
-        // If tool has Python script, execute it
-        if (tool.pythonScript) {
+        // Prefer built-in JS implementation for voice messages (Railway has no python3)
+        if (toolCall.name === "send_voice_message") {
+            result = await this.executeBuiltInTool({ ...toolCall, id: toolCallId });
+        }
+        else if (tool.pythonScript) {
+            // If tool has Python script, execute it
             let attempt = 1;
             result = await this.executePythonTool({ ...toolCall, id: toolCallId }, tool.pythonScript, attempt);
             // Optional single retry
@@ -158,6 +163,26 @@ class ToolExecutor {
     async executeBuiltInTool(toolCall) {
         const toolCallId = ensureToolCallId(toolCall);
         switch (toolCall.name) {
+            case "send_voice_message": {
+                try {
+                    const result = await (0, restSendVoice_js_1.sendVoiceMessageViaRest)(toolCall.arguments);
+                    return {
+                        tool_call_id: toolCallId,
+                        tool_name: toolCall.name,
+                        result,
+                        success: !result.toLowerCase().startsWith("error"),
+                    };
+                }
+                catch (err) {
+                    return {
+                        tool_call_id: toolCallId,
+                        tool_name: toolCall.name,
+                        result: `Error executing tool: ${err.message || String(err)}`,
+                        success: false,
+                        error: err.message || String(err),
+                    };
+                }
+            }
             case "conversation_search":
             case "archival_memory_search":
                 return {
