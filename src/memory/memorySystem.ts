@@ -15,6 +15,7 @@ import {
   getTraitsCache,
   preloadFileMemory,
 } from "./memoryStore.js";
+import type { RecallReason } from "./types.js";
 import {
   initBlockMemories,
   getAllArchivalMemories,
@@ -338,7 +339,7 @@ function scoreRelevanceDetailed(
   summary: string,
   tags: string[] = [],
   type?: string
-): { score: number; reasons: any[]; matchedTokens: string[] } {
+): { score: number; reasons: RecallReason[]; matchedTokens: string[] } {
   const queryTokensArr = tokenize(query);
   const queryTokens = new Set(queryTokensArr);
   const summaryTokens = tokenize(summary);
@@ -346,7 +347,7 @@ function scoreRelevanceDetailed(
   if (queryTokens.size === 0) return { score: 0, reasons: [], matchedTokens: [] };
 
   let score = 0;
-  const reasons: any[] = [];
+  const reasons: RecallReason[] = [];
   const matchedTokens: string[] = [];
 
   // Token overlap scoring
@@ -419,7 +420,7 @@ export async function recallRelevantMemories(userId: string, query: string, limi
       .slice(0, limit)
       .map((m) => ({
         ...m,
-        recall: { score: 0.5, reasons: ["recency"] },
+        recall: { score: 0.5, reasons: ["recency" as RecallReason] },
       }));
   }
 
