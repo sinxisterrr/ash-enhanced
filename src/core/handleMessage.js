@@ -14,6 +14,8 @@ const memoryDb_js_1 = require("../memory/memoryDb.js");
 const brain_js_1 = require("./brain.js");
 const sendLargeMessage_js_1 = require("../discord/sendLargeMessage.js");
 const index_js_1 = require("../index.js");
+// Boot flag - true until first message is processed with full context
+let needsBootRefresh = true;
 const TEXT_EXTENSIONS = new Set([
     "txt", "md", "json", "csv", "log", "yaml", "yml"
 ]);
@@ -268,12 +270,23 @@ async function handleMessage(message, options = {}) {
         }
     }
     // Memory recall - search across all memory types
+    // On first message after boot: load full context to establish identity and history
+    // On subsequent messages: use lightweight relevance-based recall
+    const isBootRefresh = needsBootRefresh;
+    const archivalLimit = isBootRefresh ? 50 : 6; // Boot: comprehensive history, Regular: recent relevant
+    const humanBlockLimit = isBootRefresh ? 100 : 3; // Boot: full identity, Regular: relevant facts
+    const personaBlockLimit = isBootRefresh ? 100 : 3; // Boot: full identity, Regular: relevant traits
     const [relevant, archivalMemories, humanBlocks, personaBlocks] = await Promise.all([
         (0, memorySystem_js_1.recallRelevantMemories)(userId, userText),
-        (0, blockMemory_js_1.searchArchivalMemories)(userText, 6),
-        (0, blockMemory_js_1.searchHumanBlocks)(userText, 2),
-        (0, blockMemory_js_1.searchPersonaBlocks)(userText, 2),
+        (0, blockMemory_js_1.searchArchivalMemories)(userText, archivalLimit),
+        (0, blockMemory_js_1.searchHumanBlocks)(userText, humanBlockLimit),
+        (0, blockMemory_js_1.searchPersonaBlocks)(userText, personaBlockLimit),
     ]);
+    // Mark boot refresh as complete after first message
+    if (isBootRefresh) {
+        needsBootRefresh = false;
+        logger_js_1.logger.info(`🔄 Boot refresh complete: loaded ${archivalMemories.length} archival, ${humanBlocks.length} human blocks, ${personaBlocks.length} persona blocks`);
+    }
     if (process.env.MEMORY_DEBUG === "true") {
         logger_js_1.logger.info(`🧠 Memory recall: relevant=${relevant.length}, archival=${archivalMemories.length}, human=${humanBlocks.length}, persona=${personaBlocks.length}`);
     }

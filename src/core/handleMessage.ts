@@ -30,6 +30,9 @@ import { think } from "./brain.js";
 import { sendLargeMessage } from "../discord/sendLargeMessage.js";
 import { bodySystem } from "../index.js";
 
+// Boot flag - true until first message is processed with full context
+let needsBootRefresh = true;
+
 const TEXT_EXTENSIONS = new Set([
   "txt", "md", "json", "csv", "log", "yaml", "yml"
 ]);
@@ -335,12 +338,25 @@ export async function handleMessage(
   }
 
   // Memory recall - search across all memory types
+  // On first message after boot: load full context to establish identity and history
+  // On subsequent messages: use lightweight relevance-based recall
+  const isBootRefresh = needsBootRefresh;
+  const archivalLimit = isBootRefresh ? 50 : 6;   // Boot: comprehensive history, Regular: recent relevant
+  const humanBlockLimit = isBootRefresh ? 100 : 3;  // Boot: full identity, Regular: relevant facts
+  const personaBlockLimit = isBootRefresh ? 100 : 3; // Boot: full identity, Regular: relevant traits
+
   const [relevant, archivalMemories, humanBlocks, personaBlocks] = await Promise.all([
     recallRelevantMemories(userId, userText),
-    searchArchivalMemories(userText, 6),
-    searchHumanBlocks(userText, 2),
-    searchPersonaBlocks(userText, 2),
+    searchArchivalMemories(userText, archivalLimit),
+    searchHumanBlocks(userText, humanBlockLimit),
+    searchPersonaBlocks(userText, personaBlockLimit),
   ]);
+
+  // Mark boot refresh as complete after first message
+  if (isBootRefresh) {
+    needsBootRefresh = false;
+    logger.info(`🔄 Boot refresh complete: loaded ${archivalMemories.length} archival, ${humanBlocks.length} human blocks, ${personaBlocks.length} persona blocks`);
+  }
 
   if (process.env.MEMORY_DEBUG === "true") {
     logger.info(
