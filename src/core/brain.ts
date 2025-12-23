@@ -131,6 +131,16 @@ function sanitize(text: any, authorName: string = ""): string {
     out = out.replace(/^Ash:/i, "").trim();
   }
 
+  // Strip voice message formatting that shouldn't appear in text messages
+  // Remove [A] prefix (triangle/tone tag indicator)
+  out = out.replace(/^\[A\]\s*/i, "").trim();
+
+  // Remove "Voice message - [tone description]" lines
+  out = out.replace(/^Voice message\s*[-–]\s*[^\n]+\n/i, "").trim();
+
+  // Remove standalone tone descriptions in square brackets at start of message
+  out = out.replace(/^\[[^\]]*,\s*[^\]]*,\s*[^\]]*\]\s*\n/i, "").trim();
+
   // Collapse excessive newlines
   out = out.replace(/\n{3,}/g, "\n\n");
 
