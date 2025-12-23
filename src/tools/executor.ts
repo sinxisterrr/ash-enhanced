@@ -194,16 +194,25 @@ export class ToolExecutor {
     switch (toolCall.name) {
       case "send_voice_message": {
         try {
+          logger.info(`🎤 Executing send_voice_message tool`);
+          logger.debug(`[Tool] Voice message args: ${JSON.stringify(toolCall.arguments)}`);
           const result = await sendVoiceMessageViaRest(
             toolCall.arguments as any
           );
+          const isSuccess = !result.toLowerCase().startsWith("error");
+          if (isSuccess) {
+            logger.info(`✅ send_voice_message completed: ${result}`);
+          } else {
+            logger.error(`❌ send_voice_message failed: ${result}`);
+          }
           return {
             tool_call_id: toolCallId,
             tool_name: toolCall.name,
             result,
-            success: !result.toLowerCase().startsWith("error"),
+            success: isSuccess,
           };
         } catch (err: any) {
+          logger.error(`❌ send_voice_message threw exception: ${err.message || String(err)}`);
           return {
             tool_call_id: toolCallId,
             tool_name: toolCall.name,

@@ -14,6 +14,10 @@ exports.upsertArchivalMemories = upsertArchivalMemories;
 exports.upsertMemoryBlocks = upsertMemoryBlocks;
 exports.loadArchivalMemoriesFromDb = loadArchivalMemoriesFromDb;
 exports.loadMemoryBlocksFromDb = loadMemoryBlocksFromDb;
+exports.getCategoryPrompt = getCategoryPrompt;
+exports.upsertCategoryPrompt = upsertCategoryPrompt;
+exports.listCategoryPrompts = listCategoryPrompts;
+exports.deleteCategoryPrompt = deleteCategoryPrompt;
 exports.seedMemoryDatabaseFromFiles = seedMemoryDatabaseFromFiles;
 const pg_1 = __importDefault(require("pg"));
 const path_1 = __importDefault(require("path"));
@@ -91,6 +95,16 @@ async function initMemoryDatabase() {
       limit_value INTEGER,
       read_only BOOLEAN,
       PRIMARY KEY (block_type, label)
+    );
+  `);
+    await db.query(`
+    CREATE TABLE IF NOT EXISTS category_prompts (
+      category_id TEXT PRIMARY KEY,
+      category_name TEXT,
+      prompt_modifications TEXT NOT NULL,
+      enabled BOOLEAN NOT NULL DEFAULT true,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
   `);
 }
@@ -223,6 +237,53 @@ async function loadMemoryBlocksFromDb(blockType) {
       WHERE block_type = $1
     `, [blockType]);
     return rows;
+}
+async function getCategoryPrompt(categoryId) {
+    const db = getPool();
+    if (!db)
+        return null;
+    const { rows } = await db.query(`
+      SELECT category_id, category_name, prompt_modifications, enabled, created_at, updated_at
+      FROM category_prompts
+      WHERE category_id = $1 AND enabled = true
+      LIMIT 1
+    `, [categoryId]);
+    return rows[0] ?? null;
+}
+async function upsertCategoryPrompt(config) {
+    const db = getPool();
+    if (!db)
+        return;
+    await db.query(`
+      INSERT INTO category_prompts (category_id, category_name, prompt_modifications, enabled, updated_at)
+      VALUES ($1, $2, $3, $4, NOW())
+      ON CONFLICT (category_id)
+      DO UPDATE SET
+        category_name = EXCLUDED.category_name,
+        prompt_modifications = EXCLUDED.prompt_modifications,
+        enabled = EXCLUDED.enabled,
+        updated_at = NOW()
+    `, [
+        config.category_id,
+        config.category_name ?? null,
+        config.prompt_modifications,
+        config.enabled,
+    ]);
+}
+async function listCategoryPrompts() {
+    const db = getPool();
+    if (!db)
+        return [];
+    const { rows } = await db.query(`SELECT category_id, category_name, prompt_modifications, enabled, created_at, updated_at
+     FROM category_prompts
+     ORDER BY category_name, category_id`);
+    return rows;
+}
+async function deleteCategoryPrompt(categoryId) {
+    const db = getPool();
+    if (!db)
+        return;
+    await db.query(`DELETE FROM category_prompts WHERE category_id = $1`, [categoryId]);
 }
 async function seedMemoryDatabaseFromFiles(botId, seedUserId, seedTraits) {
     const db = getPool();

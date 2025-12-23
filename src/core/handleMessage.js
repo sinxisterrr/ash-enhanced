@@ -10,6 +10,7 @@ const whisper_js_1 = require("../transcription/whisper.js");
 const memorySystem_js_1 = require("../memory/memorySystem.js");
 const memoryStore_js_1 = require("../memory/memoryStore.js");
 const blockMemory_js_1 = require("../memory/blockMemory.js");
+const memoryDb_js_1 = require("../memory/memoryDb.js");
 const brain_js_1 = require("./brain.js");
 const sendLargeMessage_js_1 = require("../discord/sendLargeMessage.js");
 const index_js_1 = require("../index.js");
@@ -280,6 +281,21 @@ async function handleMessage(message, options = {}) {
     const voiceTargetHint = isDm
         ? `If you call send_voice_message, use target_type="user" and target="${message.author.id}".`
         : `If you call send_voice_message, use target_type="channel" and target="${message.channel.id}".`;
+    // Category-based prompt detection
+    let categoryPromptModifications;
+    if (message.channel && "parentId" in message.channel && message.channel.parentId) {
+        const categoryId = message.channel.parentId;
+        try {
+            const categoryConfig = await (0, memoryDb_js_1.getCategoryPrompt)(categoryId);
+            if (categoryConfig && categoryConfig.enabled) {
+                categoryPromptModifications = categoryConfig.prompt_modifications;
+                logger_js_1.logger.info(`📂 Using category prompt for category: ${categoryConfig.category_name || categoryId}`);
+            }
+        }
+        catch (err) {
+            logger_js_1.logger.warn(`Failed to fetch category prompt for ${categoryId}:`, err);
+        }
+    }
     const packet = {
         userText,
         stm: historyBeforeUser,
@@ -294,6 +310,7 @@ async function handleMessage(message, options = {}) {
         voiceTargetHint,
         authorId: message.author.id,
         authorName: message.author.id, // ← Use ID instead of username
+        categoryPromptModifications,
     };
     try {
         let { reply } = await (0, brain_js_1.think)(packet);

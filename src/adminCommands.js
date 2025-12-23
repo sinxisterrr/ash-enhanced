@@ -27,6 +27,7 @@ exports.getCommandLog = getCommandLog;
 const child_process_1 = require("child_process");
 const util_1 = require("util");
 const autonomous_1 = require("./autonomous");
+const memoryDb_js_1 = require("./memory/memoryDb.js");
 const getModelStatsCommand = async (_args) => "Model stats are not available in Ollama mode.";
 const execAsync = (0, util_1.promisify)(child_process_1.exec);
 // ===== CONFIGURATION =====
@@ -243,6 +244,117 @@ async function handleAdminCommand(message, botUserId) {
                     throw new Error(`Chat-Statistik fehlgeschlagen: ${error.message}`);
                 }
                 break;
+            case 'category':
+                // Category prompt management
+                if (args.length === 0) {
+                    response = '📂 **Category Prompt Commands**:\n' +
+                        '• `!category list` - List all category prompts\n' +
+                        '• `!category get <categoryId>` - Get category prompt config\n' +
+                        '• `!category set <categoryId> <prompt>` - Set category prompt\n' +
+                        '• `!category delete <categoryId>` - Delete category prompt\n' +
+                        '• `!category enable <categoryId>` - Enable category prompt\n' +
+                        '• `!category disable <categoryId>` - Disable category prompt\n\n' +
+                        '**Note**: Use the category ID from Discord (right-click category → Copy ID with Developer Mode enabled)';
+                    break;
+                }
+                const subCommand = args[0].toLowerCase();
+                if (subCommand === 'list') {
+                    const categories = await (0, memoryDb_js_1.listCategoryPrompts)();
+                    if (categories.length === 0) {
+                        response = '📂 No category prompts configured.';
+                    }
+                    else {
+                        response = '📂 **Category Prompts**:\n\n' +
+                            categories.map(c => `**${c.category_name || c.category_id}** (${c.enabled ? '✅ Enabled' : '❌ Disabled'})\n` +
+                                `   ID: \`${c.category_id}\`\n` +
+                                `   Prompt: ${c.prompt_modifications.substring(0, 100)}${c.prompt_modifications.length > 100 ? '...' : ''}`).join('\n\n');
+                    }
+                }
+                else if (subCommand === 'get') {
+                    if (!args[1]) {
+                        response = '❌ **Missing argument**: `!category get <categoryId>`';
+                        break;
+                    }
+                    const categoryId = args[1];
+                    const config = await (0, memoryDb_js_1.getCategoryPrompt)(categoryId);
+                    if (!config) {
+                        response = `📂 No prompt configuration found for category ID: \`${categoryId}\``;
+                    }
+                    else {
+                        response = `📂 **Category: ${config.category_name || config.category_id}**\n\n` +
+                            `**ID**: \`${config.category_id}\`\n` +
+                            `**Enabled**: ${config.enabled ? '✅ Yes' : '❌ No'}\n` +
+                            `**Prompt Modifications**:\n\`\`\`\n${config.prompt_modifications}\n\`\`\``;
+                    }
+                }
+                else if (subCommand === 'set') {
+                    if (args.length < 3) {
+                        response = '❌ **Missing arguments**: `!category set <categoryId> <prompt>`\n' +
+                            'Example: `!category set 123456789 You are in a support channel. Be helpful and concise.`';
+                        break;
+                    }
+                    const categoryId = args[1];
+                    const promptText = args.slice(2).join(' ');
+                    // Check if this is the current channel's category
+                    let categoryName;
+                    if (message.channel && 'parentId' in message.channel && message.channel.parentId === categoryId) {
+                        const category = message.guild?.channels.cache.get(categoryId);
+                        if (category && category.type === 4) { // Category channel type
+                            categoryName = category.name;
+                        }
+                    }
+                    const config = {
+                        category_id: categoryId,
+                        category_name: categoryName,
+                        prompt_modifications: promptText,
+                        enabled: true
+                    };
+                    await (0, memoryDb_js_1.upsertCategoryPrompt)(config);
+                    response = `✅ **Category prompt set for ${categoryName || categoryId}**\n\n` +
+                        `ID: \`${categoryId}\`\n` +
+                        `Prompt: \`\`\`${promptText}\`\`\``;
+                }
+                else if (subCommand === 'delete') {
+                    if (!args[1]) {
+                        response = '❌ **Missing argument**: `!category delete <categoryId>`';
+                        break;
+                    }
+                    const categoryId = args[1];
+                    await (0, memoryDb_js_1.deleteCategoryPrompt)(categoryId);
+                    response = `✅ **Category prompt deleted**: \`${categoryId}\``;
+                }
+                else if (subCommand === 'enable') {
+                    if (!args[1]) {
+                        response = '❌ **Missing argument**: `!category enable <categoryId>`';
+                        break;
+                    }
+                    const categoryId = args[1];
+                    const existing = await (0, memoryDb_js_1.getCategoryPrompt)(categoryId);
+                    if (!existing) {
+                        response = `❌ **Category not found**: \`${categoryId}\`\nCreate it first with \`!category set\``;
+                        break;
+                    }
+                    await (0, memoryDb_js_1.upsertCategoryPrompt)({ ...existing, enabled: true });
+                    response = `✅ **Category prompt enabled**: \`${categoryId}\``;
+                }
+                else if (subCommand === 'disable') {
+                    if (!args[1]) {
+                        response = '❌ **Missing argument**: `!category disable <categoryId>`';
+                        break;
+                    }
+                    const categoryId = args[1];
+                    const existing = await (0, memoryDb_js_1.getCategoryPrompt)(categoryId);
+                    if (!existing) {
+                        response = `❌ **Category not found**: \`${categoryId}\``;
+                        break;
+                    }
+                    await (0, memoryDb_js_1.upsertCategoryPrompt)({ ...existing, enabled: false });
+                    response = `✅ **Category prompt disabled**: \`${categoryId}\``;
+                }
+                else {
+                    response = `❓ Unknown category subcommand: \`${subCommand}\`\nUse \`!category\` for help.`;
+                }
+                break;
             case 'help':
                 response = '🛠️ **Admin Commands**\n\n' +
                     '**PM2 Control**\n' +
@@ -263,6 +375,8 @@ async function handleAdminCommand(message, botUserId) {
                     '• `!timeusage` - Show current chat statistics (hours & messages)\n' +
                     '• `!time` - Same as timeusage\n' +
                     '• `!chat-stats` - Same as timeusage\n\n' +
+                    '**Category Prompts**\n' +
+                    '• `!category` - Manage category-specific prompts\n\n' +
                     '**Other**\n' +
                     '• `!help` - Show this message';
                 break;

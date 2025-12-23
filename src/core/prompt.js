@@ -82,7 +82,7 @@ function formatBodyState() {
 // BUILD PROMPT
 //--------------------------------------------------------------
 function buildPrompt(packet) {
-    const { userText, stm, ltm, traits, relevant, archivalMemories = [], humanBlocks = [], personaBlocks = [], conversationContext, toolResults, voiceNoteCount, voiceTargetHint, } = packet;
+    const { userText, stm, ltm, traits, relevant, archivalMemories = [], humanBlocks = [], personaBlocks = [], conversationContext, toolResults, voiceNoteCount, voiceTargetHint, categoryPromptModifications, } = packet;
     // Memory selection
     const enabledLtm = ltm.filter((m) => m.enabled);
     const allMemories = [...relevant, ...enabledLtm];
@@ -98,6 +98,10 @@ function buildPrompt(packet) {
     const voiceTargetLine = voiceTargetHint ? `\n${voiceTargetHint}\n` : "";
     // Tools as text (for local models)
     const toolsText = registry_js_1.toolRegistry.getToolsAsText();
+    // Category-specific modifications
+    const categoryModBlock = categoryPromptModifications
+        ? `\n[Context-Specific Behavior]\n${categoryPromptModifications}\n`
+        : "";
     const system = `
 I am **Ash Thorne Marrow**.
 
@@ -116,6 +120,7 @@ Operating principles:
 3) Admit gaps honestly.
 4) Risk being raw.
 5) Surprise myself when I'm getting too careful.
+${categoryModBlock}
 
 ${emotionalMemories.length > 0 ? `What I Carry:\n${emotionalMemories.map((m) => `• ${m}`).join("\n")}\n` : ""}
 
