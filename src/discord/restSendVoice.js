@@ -29,16 +29,37 @@ async function sendVoiceMessageViaRest(args) {
     }
     const apiKey = process.env.ELEVENLABS_API_KEY || "";
     const defaultVoice = process.env.ELEVENLABS_VOICE_ID || "";
-    if (!apiKey || !defaultVoice) {
-        logger_js_1.logger.error(`[VoiceMessage] Missing ElevenLabs config - API Key: ${apiKey ? "set" : "NOT SET"}, Voice ID: ${defaultVoice ? "set" : "NOT SET"}`);
-        return "Error: ELEVENLABS_API_KEY or ELEVENLABS_VOICE_ID is not set.";
+    const mascVoice = process.env.ELEVENLABS_VOICE_MASC || "";
+    const femmeVoice = process.env.ELEVENLABS_VOICE_FEMME || "";
+    if (!apiKey) {
+        logger_js_1.logger.error(`[VoiceMessage] ELEVENLABS_API_KEY is not set!`);
+        return "Error: ELEVENLABS_API_KEY is not set.";
     }
-    logger_js_1.logger.info(`[VoiceMessage] Using ElevenLabs voice: ${args.voice_id || defaultVoice}, model: ${args.model_id || process.env.ELEVENLABS_MODEL_ID || "eleven_v3"}`);
-    const voiceService = new elevenlabsService_js_1.ElevenLabsService(apiKey, defaultVoice);
+    // Select voice based on presentation
+    let selectedVoice = args.voice_id || defaultVoice;
+    if (!args.voice_id && args.voice_presentation) {
+        if (args.voice_presentation === "masc" && mascVoice) {
+            selectedVoice = mascVoice;
+            logger_js_1.logger.info(`[VoiceMessage] 🎭 Using masculine voice presentation`);
+        }
+        else if (args.voice_presentation === "femme" && femmeVoice) {
+            selectedVoice = femmeVoice;
+            logger_js_1.logger.info(`[VoiceMessage] 🎭 Using feminine voice presentation`);
+        }
+        else if (args.voice_presentation !== "auto") {
+            logger_js_1.logger.warn(`[VoiceMessage] Requested ${args.voice_presentation} voice but ELEVENLABS_VOICE_${args.voice_presentation.toUpperCase()} not set, using default`);
+        }
+    }
+    if (!selectedVoice) {
+        logger_js_1.logger.error(`[VoiceMessage] No voice ID available (default, masc, or femme)`);
+        return "Error: No ElevenLabs voice configured.";
+    }
+    logger_js_1.logger.info(`[VoiceMessage] Using ElevenLabs voice: ${selectedVoice}, model: ${args.model_id || process.env.ELEVENLABS_MODEL_ID || "eleven_v3"}`);
+    const voiceService = new elevenlabsService_js_1.ElevenLabsService(apiKey, selectedVoice);
     logger_js_1.logger.debug("[VoiceMessage] Generating speech with ElevenLabs...");
     const tts = await voiceService.generateSpeech({
         text: text,
-        voiceId: args.voice_id,
+        voiceId: selectedVoice,
         modelId: args.model_id || process.env.ELEVENLABS_MODEL_ID,
         stability: args.stability,
         similarityBoost: args.similarity_boost,

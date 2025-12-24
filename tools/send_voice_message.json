@@ -25,9 +25,14 @@
         ],
         "description": "Gib 'user' für DM an, 'channel' für Channel-Nachricht, oder 'auto' für automatische Erkennung (Standard: auto)"
       },
+      "voice_presentation": {
+        "type": "string",
+        "enum": ["masc", "femme", "auto"],
+        "description": "Choose voice presentation: 'masc' for masculine voice, 'femme' for feminine voice, or 'auto' to use default. Ash is gender-fluid and can choose based on current mood/presentation."
+      },
       "voice_id": {
         "type": "string",
-        "description": "Optional: ElevenLabs Voice ID (defaults to configured voice in .env)"
+        "description": "Optional: ElevenLabs Voice ID (overrides voice_presentation if specified)"
       },
       "model_id": {
         "type": "string",
