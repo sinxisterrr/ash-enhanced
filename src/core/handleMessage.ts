@@ -230,6 +230,7 @@ function extractToolCalls(text: string): ToolCall[] {
     if (!raw) continue;
     try {
       const parsed = JSON.parse(raw);
+      logger.debug(`[ExtractToolCalls] Parsed JSON: ${JSON.stringify(parsed).substring(0, 300)}`);
       calls.push(...normalizeToolCalls(parsed));
     } catch {
       continue;
@@ -242,6 +243,7 @@ function extractToolCalls(text: string): ToolCall[] {
   if (trimmed.startsWith("{") || trimmed.startsWith("[")) {
     try {
       const parsed = JSON.parse(trimmed);
+      logger.debug(`[ExtractToolCalls] Parsed raw JSON: ${JSON.stringify(parsed).substring(0, 300)}`);
       calls.push(...normalizeToolCalls(parsed));
     } catch {
       return [];
