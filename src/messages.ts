@@ -7,6 +7,7 @@ import type { Message } from "discord.js";
 import https from "https";
 import { handleMessage } from "./core/handleMessage.js";
 import { initAshSystems } from "./index.js";
+import { sendLargeMessage } from "./discord/sendLargeMessage.js";
 
 export enum MessageType {
   DM = "DM",
@@ -85,9 +86,14 @@ export async function sendMessage(
   const reply = await handleMessage(message, {
     overrideText: customContent,
     conversationContext,
-    sendReply: true, // Changed from false - handleMessage now sends its own replies
+    sendReply: false, // handleMessage doesn't send - we send it here to avoid duplicates
     includeAttachments: customContent ? false : true,
   });
+
+  // Send the reply ourselves to avoid duplicate sends
+  if (reply && reply.trim()) {
+    await sendLargeMessage(message, reply);
+  }
 
   return reply ?? "";
 }

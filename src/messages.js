@@ -18,6 +18,7 @@ exports.getDailyStats = getDailyStats;
 const https_1 = __importDefault(require("https"));
 const handleMessage_js_1 = require("./core/handleMessage.js");
 const index_js_1 = require("./index.js");
+const sendLargeMessage_js_1 = require("./discord/sendLargeMessage.js");
 var MessageType;
 (function (MessageType) {
     MessageType["DM"] = "DM";
@@ -79,9 +80,13 @@ async function sendMessage(message, _messageType, conversationContext = null, cu
     const reply = await (0, handleMessage_js_1.handleMessage)(message, {
         overrideText: customContent,
         conversationContext,
-        sendReply: true, // Changed from false - handleMessage now sends its own replies
+        sendReply: false, // handleMessage doesn't send - we send it here to avoid duplicates
         includeAttachments: customContent ? false : true,
     });
+    // Send the reply ourselves to avoid duplicate sends
+    if (reply && reply.trim()) {
+        await (0, sendLargeMessage_js_1.sendLargeMessage)(message, reply);
+    }
     return reply ?? "";
 }
 async function sendTimerMessage(channel) {
