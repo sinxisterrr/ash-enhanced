@@ -447,6 +447,9 @@ async function handleMessage(message, options = {}) {
                     const toolPacket = { ...packet, toolResults };
                     const followUp = await (0, brain_js_1.think)(toolPacket);
                     logger_js_1.logger.info(`🔧 Follow-up reply length: ${followUp.reply?.length || 0} chars`);
+                    if (followUp.reply) {
+                        logger_js_1.logger.debug(`🔧 Follow-up reply content: "${followUp.reply.substring(0, 200)}"`);
+                    }
                     finalReply = followUp.reply || "";
                 }
                 // If followUp is empty, strip the JSON tool call from the original reply
@@ -505,7 +508,12 @@ async function handleMessage(message, options = {}) {
                 }
             }
             if (sendReply && finalReply) {
+                logger_js_1.logger.debug(`📤 Sending message to Discord (${finalReply.length} chars): "${finalReply.substring(0, 100)}"`);
                 await (0, sendLargeMessage_js_1.sendLargeMessage)(message, finalReply);
+                logger_js_1.logger.info(`✅ Message sent to Discord`);
+            }
+            else if (!finalReply) {
+                logger_js_1.logger.warn(`⚠️  No final reply to send (sendReply=${sendReply}, finalReply empty)`);
             }
             if (finalReply) {
                 (0, memorySystem_js_1.addToSTM)("assistant", finalReply);

@@ -501,6 +501,9 @@ export async function handleMessage(
           const toolPacket = { ...packet, toolResults };
           const followUp = await think(toolPacket);
           logger.info(`🔧 Follow-up reply length: ${followUp.reply?.length || 0} chars`);
+          if (followUp.reply) {
+            logger.debug(`🔧 Follow-up reply content: "${followUp.reply.substring(0, 200)}"`);
+          }
           finalReply = followUp.reply || "";
         }
 
@@ -563,7 +566,11 @@ export async function handleMessage(
       }
 
       if (sendReply && finalReply) {
+        logger.debug(`📤 Sending message to Discord (${finalReply.length} chars): "${finalReply.substring(0, 100)}"`);
         await sendLargeMessage(message, finalReply);
+        logger.info(`✅ Message sent to Discord`);
+      } else if (!finalReply) {
+        logger.warn(`⚠️  No final reply to send (sendReply=${sendReply}, finalReply empty)`);
       }
       if (finalReply) {
         addToSTM("assistant", finalReply);
