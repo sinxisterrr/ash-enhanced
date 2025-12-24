@@ -20,7 +20,7 @@ class WebSearchService {
             logger_js_1.logger.info(`🔍 [WebSearch] Searching for: "${args.query.substring(0, 100)}"`);
             const requestBody = {
                 query: args.query,
-                numResults: args.num_results || 3, // Reduced from 10 to 3 to avoid context overflow
+                numResults: args.num_results || 5, // Reduced from 10 to 3 to avoid context overflow
                 contents: {
                     text: args.include_text || false,
                     highlights: true,
