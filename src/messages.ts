@@ -5,9 +5,9 @@
 
 import type { Message } from "discord.js";
 import https from "https";
-import { handleMessage } from "./core/handleMessage.js";
-import { initAshSystems } from "./index.js";
-import { sendLargeMessage } from "./discord/sendLargeMessage.js";
+import { handleMessage } from "./core/handleMessage";
+import { initAshSystems } from "./index";
+import { sendLargeMessage } from "./discord/sendLargeMessage";
 
 export enum MessageType {
   DM = "DM",
