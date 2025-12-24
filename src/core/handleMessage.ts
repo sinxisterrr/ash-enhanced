@@ -473,7 +473,38 @@ export async function handleMessage(
         const toolResults = formatToolResults(results);
         const toolPacket = { ...packet, toolResults };
         const followUp = await think(toolPacket);
-        finalReply = followUp.reply || reply || "";
+        finalReply = followUp.reply || "";
+
+        // If followUp is empty, strip the JSON tool call from the original reply
+        if (!finalReply && reply) {
+          finalReply = reply.replace(/```json\s*[\s\S]*?```/gi, "").trim();
+          // Also strip raw JSON at start of message
+          if (finalReply.startsWith("{") || finalReply.startsWith("[")) {
+            const lines = finalReply.split("\n");
+            // Try to find where JSON ends and regular text begins
+            let jsonEndIndex = 0;
+            let braceCount = 0;
+            let inJson = false;
+
+            for (let i = 0; i < finalReply.length; i++) {
+              const char = finalReply[i];
+              if (char === "{" || char === "[") {
+                inJson = true;
+                braceCount++;
+              } else if (char === "}" || char === "]") {
+                braceCount--;
+                if (braceCount === 0 && inJson) {
+                  jsonEndIndex = i + 1;
+                  break;
+                }
+              }
+            }
+
+            if (jsonEndIndex > 0) {
+              finalReply = finalReply.substring(jsonEndIndex).trim();
+            }
+          }
+        }
       }
     }
 
