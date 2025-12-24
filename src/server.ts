@@ -297,30 +297,14 @@ async function processAndSendMessage(message: any, messageType: MessageType, con
       await message.channel.sendTyping();
     }
     const msg = await sendMessage(message, messageType, conversationContext, customContent);
-    
-    if (msg !== "") {
+    // sendMessage already sends the reply via sendLargeMessage - no need to send again
+
+    if (msg !== "" && ENABLE_AUTONOMOUS && client.user?.id) {
       // 🔒 Record that bot replied (for pingpong tracking)
-      if (ENABLE_AUTONOMOUS && client.user?.id) {
-        const wasFarewell = msg.toLowerCase().includes('gotta go') || 
-                           msg.toLowerCase().includes('catch you later') ||
-                           msg.toLowerCase().includes('step away');
-        recordBotReply(message.channel.id, client.user.id, wasFarewell);
-      }
-      
-      if (msg.length <= 1900) {
-        await message.reply(msg);
-        console.log(`Message sent: ${msg}`);
-      } else {
-        const chunks = chunkText(msg, 1900);
-        await message.reply(chunks[0]);
-        
-        for (let i = 1; i < chunks.length; i++) {
-          await new Promise(r => setTimeout(r, 200));
-          await message.channel.send(chunks[i]);
-        }
-        
-        console.log(`Message sent in ${chunks.length} chunks.`);
-      }
+      const wasFarewell = msg.toLowerCase().includes('gotta go') ||
+                         msg.toLowerCase().includes('catch you later') ||
+                         msg.toLowerCase().includes('step away');
+      recordBotReply(message.channel.id, client.user.id, wasFarewell);
     }
   } catch (error) {
     console.error("🛑 Error processing and sending message:", error);
