@@ -13,8 +13,14 @@ const form_data_1 = __importDefault(require("form-data"));
 const elevenlabsService_js_1 = require("../elevenlabs/elevenlabsService.js");
 const logger_js_1 = require("../utils/logger.js");
 async function sendVoiceMessageViaRest(args) {
+    // LLM sometimes sends "message" instead of "text" - normalize it
+    const text = args.text || args.message;
+    if (!text) {
+        logger_js_1.logger.error("[VoiceMessage] Missing text/message parameter!");
+        return "Error: No text provided for voice message.";
+    }
     logger_js_1.logger.info("🎤 [VoiceMessage] Attempting to send voice message");
-    logger_js_1.logger.debug(`[VoiceMessage] Text: "${args.text.substring(0, 100)}${args.text.length > 100 ? "..." : ""}"`);
+    logger_js_1.logger.debug(`[VoiceMessage] Text: "${text.substring(0, 100)}${text.length > 100 ? "..." : ""}"`);
     logger_js_1.logger.debug(`[VoiceMessage] Target: ${args.target}, Type: ${args.target_type || "auto"}`);
     const token = process.env.DISCORD_TOKEN || process.env.DISCORD_BOT_TOKEN || "";
     if (!token) {
@@ -31,7 +37,7 @@ async function sendVoiceMessageViaRest(args) {
     const voiceService = new elevenlabsService_js_1.ElevenLabsService(apiKey, defaultVoice);
     logger_js_1.logger.debug("[VoiceMessage] Generating speech with ElevenLabs...");
     const tts = await voiceService.generateSpeech({
-        text: args.text,
+        text: text,
         voiceId: args.voice_id,
         modelId: args.model_id || process.env.ELEVENLABS_MODEL_ID,
         stability: args.stability,
