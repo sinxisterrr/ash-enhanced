@@ -461,6 +461,26 @@ async function handleMessage(message, options = {}) {
             // CRITICAL: Strip any remaining JSON tool calls before sending to Discord
             // This is a safety net in case tool execution fails or LLM includes JSON in follow-up
             finalReply = finalReply.replace(/```json\s*[\s\S]*?```/gi, "").trim();
+            // Also strip raw JSON objects at the start
+            if (finalReply.startsWith("{") || finalReply.startsWith("[")) {
+                // Find where JSON ends using brace counting
+                let braceCount = 0;
+                let inJson = false;
+                for (let i = 0; i < finalReply.length; i++) {
+                    const char = finalReply[i];
+                    if (char === "{" || char === "[") {
+                        inJson = true;
+                        braceCount++;
+                    }
+                    else if (char === "}" || char === "]") {
+                        braceCount--;
+                        if (braceCount === 0 && inJson) {
+                            finalReply = finalReply.substring(i + 1).trim();
+                            break;
+                        }
+                    }
+                }
+            }
             if (sendReply && finalReply) {
                 await (0, sendLargeMessage_js_1.sendLargeMessage)(message, finalReply);
             }
