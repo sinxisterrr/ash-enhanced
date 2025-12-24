@@ -184,9 +184,11 @@ function normalizeToolCalls(parsed) {
             continue;
         const args = typeof item.arguments === "object" && item.arguments !== null
             ? item.arguments
-            : typeof item.args === "object" && item.args !== null
-                ? item.args
-                : {};
+            : typeof item.parameters === "object" && item.parameters !== null
+                ? item.parameters
+                : typeof item.args === "object" && item.args !== null
+                    ? item.args
+                    : {};
         calls.push({
             id: item.id,
             name,
