@@ -452,11 +452,13 @@ async function handleMessage(message, options = {}) {
                         logger_js_1.logger.info(`🔧 Follow-up reply length: ${followUp.reply?.length || 0} chars`);
                         if (followUp.reply) {
                             logger_js_1.logger.debug(`🔧 Follow-up reply content: "${followUp.reply.substring(0, 200)}"`);
-                            // Check if follow-up contains more tool calls (recursive tool execution)
+                            // Check if follow-up contains the SAME tool calls (potential infinite loop)
                             const followUpToolCalls = extractToolCalls(followUp.reply, messageContext);
-                            if (followUpToolCalls.length > 0) {
-                                logger_js_1.logger.warn(`⚠️  Follow-up contains ${followUpToolCalls.length} more tool calls - stripping to prevent loops`);
-                                // Strip the tool calls from the follow-up
+                            const originalToolNames = toolCalls.map(tc => tc.name);
+                            const duplicateTools = followUpToolCalls.filter(tc => originalToolNames.includes(tc.name));
+                            if (duplicateTools.length > 0) {
+                                logger_js_1.logger.warn(`⚠️  Follow-up trying to call same tools again (${duplicateTools.map(t => t.name).join(', ')}) - stripping to prevent infinite loop`);
+                                // Strip the tool calls from the follow-up to prevent loops
                                 finalReply = followUp.reply.replace(/```json\s*[\s\S]*?```/gi, "").trim();
                                 if (finalReply.startsWith("{") || finalReply.startsWith("[")) {
                                     // Strip raw JSON
@@ -470,6 +472,37 @@ async function handleMessage(message, options = {}) {
                                             if (braceCount === 0) {
                                                 finalReply = finalReply.substring(i + 1).trim();
                                                 break;
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                            else if (followUpToolCalls.length > 0) {
+                                // Different tools in follow-up - allow them (e.g., send voice message after tool failure)
+                                logger_js_1.logger.info(`🔧 Follow-up contains ${followUpToolCalls.length} new tool call(s): ${followUpToolCalls.map(t => t.name).join(', ')} - executing`);
+                                const followUpResults = await executor_js_1.toolExecutor.executeTools(followUpToolCalls);
+                                logger_js_1.logger.info(`🔧 Follow-up tool results: ${followUpResults.map(r => r.success ? '✅' : '❌').join(' ')}`);
+                                // If voice message sent in follow-up, suppress text
+                                const voiceInFollowUp = followUpResults.some(r => r.tool_name === 'send_voice_message' && r.success);
+                                if (voiceInFollowUp) {
+                                    logger_js_1.logger.info(`🎤 Voice message sent in follow-up - suppressing text`);
+                                    finalReply = "";
+                                }
+                                else {
+                                    // Strip the JSON from the reply
+                                    finalReply = followUp.reply.replace(/```json\s*[\s\S]*?```/gi, "").trim();
+                                    if (finalReply.startsWith("{") || finalReply.startsWith("[")) {
+                                        let braceCount = 0;
+                                        for (let i = 0; i < finalReply.length; i++) {
+                                            const char = finalReply[i];
+                                            if (char === "{" || char === "[")
+                                                braceCount++;
+                                            else if (char === "}" || char === "]") {
+                                                braceCount--;
+                                                if (braceCount === 0) {
+                                                    finalReply = finalReply.substring(i + 1).trim();
+                                                    break;
+                                                }
                                             }
                                         }
                                     }
