@@ -83,7 +83,8 @@ export class ToolExecutor {
     let result: ToolResult;
 
     // Prefer built-in JS implementation for certain tools (Railway has no python3)
-    if (toolCall.name === "send_voice_message" || toolCall.name === "web_search" || toolCall.name === "send_heartbeat") {
+    const builtInTools = ["send_voice_message", "web_search", "send_heartbeat", "spotify_control"];
+    if (builtInTools.includes(toolCall.name)) {
       result = await this.executeBuiltInTool({ ...toolCall, id: toolCallId });
     } else if (tool.pythonScript) {
       // If tool has Python script, execute it
@@ -312,14 +313,15 @@ export class ToolExecutor {
         }
       }
 
+      case "spotify_control":
       case "conversation_search":
       case "archival_memory_search":
         return {
           tool_call_id: toolCallId,
           tool_name: toolCall.name,
-          result: "Built-in tool not yet implemented",
+          result: `Tool ${toolCall.name} temporarily unavailable - Python implementation needs TypeScript conversion`,
           success: false,
-          error: "Not implemented",
+          error: "Python not available on Railway",
         };
 
       default:
