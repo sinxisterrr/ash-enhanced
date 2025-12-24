@@ -60,8 +60,7 @@
       }
     },
     "required": [
-      "text",
-      "target"
+      "text"
     ]
   }
 }

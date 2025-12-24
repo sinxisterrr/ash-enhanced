@@ -60,7 +60,9 @@ export class ToolExecutor {
         result: "Missing required field: reason", error: "Missing reason" };
     }
 
-    if (needsIntent(toolCall.name) && typeof args.intent !== "string") {
+    // Make intent optional for send_voice_message (it's just for context/logging)
+    // Other tools that need intent (discord_tool, rider_pi_tool) should still require it
+    if (needsIntent(toolCall.name) && toolCall.name !== "send_voice_message" && typeof args.intent !== "string") {
       logger.warn(`[ToolExecutor] ${toolCall.name} missing required field: intent (got type: ${typeof args.intent})`);
       return { tool_call_id: toolCall.id, tool_name: toolCall.name, success: false,
         result: "Missing required field: intent", error: "Missing intent" };

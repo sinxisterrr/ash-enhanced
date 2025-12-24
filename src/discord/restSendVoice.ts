@@ -32,9 +32,17 @@ export async function sendVoiceMessageViaRest(args: VoiceArgs): Promise<string> 
     return "Error: No text provided for voice message.";
   }
 
+  // Get target from args or fall back to environment hint (set in prompt context)
+  const target = args.target || process.env.VOICE_TARGET_HINT || "";
+
+  if (!target) {
+    logger.error("[VoiceMessage] Missing target parameter and no VOICE_TARGET_HINT set!");
+    return "Error: No target provided for voice message.";
+  }
+
   logger.info("🎤 [VoiceMessage] Attempting to send voice message");
   logger.debug(`[VoiceMessage] Text: "${text.substring(0, 100)}${text.length > 100 ? "..." : ""}"`);
-  logger.debug(`[VoiceMessage] Target: ${args.target}, Type: ${args.target_type || "auto"}`);
+  logger.debug(`[VoiceMessage] Target: ${target}, Type: ${args.target_type || "auto"}`);
 
   const token = process.env.DISCORD_TOKEN || process.env.DISCORD_BOT_TOKEN || "";
   if (!token) {
@@ -95,7 +103,7 @@ export async function sendVoiceMessageViaRest(args: VoiceArgs): Promise<string> 
   logger.info(`[VoiceMessage] Speech generated successfully (${(tts.audioBuffer.length / 1024).toFixed(1)} KB, took ${tts.duration}ms)`);
 
 
-  let channelId = args.target;
+  let channelId = target;
   const targetType = args.target_type || "auto";
 
   if (targetType === "user" || (targetType === "auto" && channelId && channelId.startsWith("7"))) {
