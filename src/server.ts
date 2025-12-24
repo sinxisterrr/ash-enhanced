@@ -721,15 +721,13 @@ client.on('messageCreate', async (message) => {
       await message.channel.sendTyping();
     }
     const msg = await sendMessage(message, messageType, conversationContext, processedContent);
-    if (msg !== "") {
+    // sendMessage already sends the reply via sendLargeMessage - no need to send again
+    if (msg !== "" && ENABLE_AUTONOMOUS && client.user?.id) {
       // 🔒 Record bot reply
-      if (ENABLE_AUTONOMOUS && client.user?.id) {
-        const wasFarewell = msg.toLowerCase().includes('gotta go') || 
-                           msg.toLowerCase().includes('catch you later') ||
-                           msg.toLowerCase().includes('step away');
-        recordBotReply(message.channel.id, client.user.id, wasFarewell);
-      }
-      await message.reply(msg);
+      const wasFarewell = msg.toLowerCase().includes('gotta go') ||
+                         msg.toLowerCase().includes('catch you later') ||
+                         msg.toLowerCase().includes('step away');
+      recordBotReply(message.channel.id, client.user.id, wasFarewell);
     }
     return;
   }
