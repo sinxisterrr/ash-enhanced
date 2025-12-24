@@ -6,6 +6,7 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.buildPrompt = buildPrompt;
 const index_js_1 = require("../index.js");
+const registry_js_1 = require("../tools/registry.js");
 //--------------------------------------------------------------
 // Emotional Memory Formatting
 //--------------------------------------------------------------
@@ -135,8 +136,12 @@ ${voiceTargetLine}
 
 Tool-use protocol:
 - Only output a tool call when you truly need it.
-- When calling a tool, output ONLY a \`\`\`json\`\`\` block (no extra text around it).
+- When calling a tool, output ONLY a JSON object in this format (wrapped in \`\`\`json\`\`\` markers):
+  {"name": "tool_name", "arguments": {"param1": "value1"}}
 - Otherwise, never output JSON blocks.
+
+Available tools:
+${registry_js_1.toolRegistry.getAllTools().map(t => `- ${t.name}: ${t.description}`).join('\n')}
 `.trim();
     // Convert STM into proper chat messages (huge model quality upgrade)
     const historyMessages = (stm || []).slice(-18).map((m) => ({

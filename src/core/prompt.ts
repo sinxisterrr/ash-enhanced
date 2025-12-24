@@ -192,8 +192,12 @@ ${voiceTargetLine}
 
 Tool-use protocol:
 - Only output a tool call when you truly need it.
-- When calling a tool, output ONLY a \`\`\`json\`\`\` block (no extra text around it).
+- When calling a tool, output ONLY a JSON object in this format (wrapped in \`\`\`json\`\`\` markers):
+  {"name": "tool_name", "arguments": {"param1": "value1"}}
 - Otherwise, never output JSON blocks.
+
+Available tools:
+${toolRegistry.getAllTools().map(t => `- ${t.name}: ${t.description}`).join('\n')}
 `.trim();
 
   // Convert STM into proper chat messages (huge model quality upgrade)
