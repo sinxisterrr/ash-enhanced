@@ -872,6 +872,91 @@ app.post('/api/midjourney/generate', (req, res) => {
 });
 
 // ============================================
+// Spotify OAuth Flow (for getting refresh token)
+// ============================================
+
+let spotifyRefreshToken: string | null = null;
+
+app.get('/spotify/auth', (req, res) => {
+  const CLIENT_ID = process.env.SPOTIFY_CLIENT_ID || '';
+  const REDIRECT_URI = `${process.env.RAILWAY_PUBLIC_DOMAIN ? 'https://' + process.env.RAILWAY_PUBLIC_DOMAIN : 'http://localhost:' + PORT}/spotify/callback`;
+
+  const SCOPES = [
+    'user-read-playback-state',
+    'user-modify-playback-state',
+    'user-read-currently-playing',
+    'playlist-modify-public',
+    'playlist-modify-private',
+    'playlist-read-private',
+    'playlist-read-collaborative',
+    'user-library-read',
+    'user-library-modify',
+  ].join(' ');
+
+  const authUrl = `https://accounts.spotify.com/authorize?${new URLSearchParams({
+    client_id: CLIENT_ID,
+    response_type: 'code',
+    redirect_uri: REDIRECT_URI,
+    scope: SCOPES,
+  })}`;
+
+  res.send(`
+    <h1>Spotify Token Generator</h1>
+    <p>Click the button below to authorize Ash with Spotify:</p>
+    <a href="${authUrl}"><button style="padding: 10px 20px; font-size: 16px; cursor: pointer;">Authorize Spotify</button></a>
+  `);
+});
+
+app.get('/spotify/callback', async (req, res) => {
+  const code = req.query.code as string;
+  const CLIENT_ID = process.env.SPOTIFY_CLIENT_ID || '';
+  const CLIENT_SECRET = process.env.SPOTIFY_CLIENT_SECRET || '';
+  const REDIRECT_URI = `${process.env.RAILWAY_PUBLIC_DOMAIN ? 'https://' + process.env.RAILWAY_PUBLIC_DOMAIN : 'http://localhost:' + PORT}/spotify/callback`;
+
+  if (!code) {
+    res.send('<h1>Error: No authorization code received</h1>');
+    return;
+  }
+
+  try {
+    // Exchange code for tokens
+    const tokenResponse = await fetch('https://accounts.spotify.com/api/token', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+        'Authorization': 'Basic ' + Buffer.from(CLIENT_ID + ':' + CLIENT_SECRET).toString('base64'),
+      },
+      body: new URLSearchParams({
+        grant_type: 'authorization_code',
+        code: code,
+        redirect_uri: REDIRECT_URI,
+      }),
+    });
+
+    const data = await tokenResponse.json();
+
+    if ((data as any).refresh_token) {
+      spotifyRefreshToken = (data as any).refresh_token;
+
+      res.send(`
+        <h1>✅ Success!</h1>
+        <p>Copy this refresh token to Railway:</p>
+        <pre style="background: #f0f0f0; padding: 20px; margin: 20px 0; font-size: 14px; overflow-x: auto;">${spotifyRefreshToken}</pre>
+        <p><strong>Add it to Railway as:</strong> <code>SPOTIFY_REFRESH_TOKEN</code></p>
+        <p>You can close this window now.</p>
+      `);
+
+      console.log('\n✅ SUCCESS! Copy this to Railway as SPOTIFY_REFRESH_TOKEN:');
+      console.log('\n' + spotifyRefreshToken + '\n');
+    } else {
+      res.send(`<h1>Error: ${JSON.stringify(data)}</h1>`);
+    }
+  } catch (err: any) {
+    res.send(`<h1>Error: ${err.message}</h1>`);
+  }
+});
+
+// ============================================
 // Health Check Endpoints
 // ============================================
 
