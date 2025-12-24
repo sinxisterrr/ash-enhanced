@@ -47,11 +47,14 @@ class ToolExecutor {
         const toolCallId = ensureToolCallId(toolCall);
         const tool = registry_js_1.toolRegistry.getTool(toolCall.name);
         const args = toolCall.arguments ?? {};
+        logger_js_1.logger.debug(`[ToolExecutor] Executing ${toolCall.name} with args: ${JSON.stringify(args).substring(0, 200)}`);
         if (needsReason(toolCall.name) && typeof args.reason !== "string") {
+            logger_js_1.logger.warn(`[ToolExecutor] ${toolCall.name} missing required field: reason`);
             return { tool_call_id: toolCall.id, tool_name: toolCall.name, success: false,
                 result: "Missing required field: reason", error: "Missing reason" };
         }
         if (needsIntent(toolCall.name) && typeof args.intent !== "string") {
+            logger_js_1.logger.warn(`[ToolExecutor] ${toolCall.name} missing required field: intent (got type: ${typeof args.intent})`);
             return { tool_call_id: toolCall.id, tool_name: toolCall.name, success: false,
                 result: "Missing required field: intent", error: "Missing intent" };
         }
