@@ -32,13 +32,13 @@ export async function sendVoiceMessageViaRest(args: VoiceArgs): Promise<string> 
     return "Error: No text provided for voice message.";
   }
 
-  // Get target from args or fall back to environment hint (set in prompt context)
-  const target = args.target || process.env.VOICE_TARGET_HINT || "";
-
-  if (!target) {
-    logger.error("[VoiceMessage] Missing target parameter and no VOICE_TARGET_HINT set!");
+  // Target is injected by handleMessage.ts if missing from LLM output
+  if (!args.target) {
+    logger.error("[VoiceMessage] Missing target parameter!");
     return "Error: No target provided for voice message.";
   }
+
+  const target = args.target;
 
   logger.info("🎤 [VoiceMessage] Attempting to send voice message");
   logger.debug(`[VoiceMessage] Text: "${text.substring(0, 100)}${text.length > 100 ? "..." : ""}"`);

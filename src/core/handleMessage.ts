@@ -190,7 +190,7 @@ function parseManualMemoryCommand(text: string): ManualMemoryCommand | null {
   return { summary, type, tags };
 }
 
-function normalizeToolCalls(parsed: any): ToolCall[] {
+function normalizeToolCalls(parsed: any, messageContext?: { authorId: string; channelId: string; isDm: boolean }): ToolCall[] {
   const items = Array.isArray(parsed) ? parsed : [parsed];
   const calls: ToolCall[] = [];
 
@@ -208,6 +208,13 @@ function normalizeToolCalls(parsed: any): ToolCall[] {
             ? item.args
             : {};
 
+    // Inject target for send_voice_message if missing
+    if (name === "send_voice_message" && messageContext && !args.target) {
+      args.target = messageContext.isDm ? messageContext.authorId : messageContext.channelId;
+      args.target_type = messageContext.isDm ? "user" : "channel";
+      logger.debug(`[NormalizeToolCalls] Injected missing target: ${args.target} (${args.target_type})`);
+    }
+
     calls.push({
       id: item.id,
       name,
@@ -218,7 +225,7 @@ function normalizeToolCalls(parsed: any): ToolCall[] {
   return calls;
 }
 
-function extractToolCalls(text: string): ToolCall[] {
+function extractToolCalls(text: string, messageContext?: { authorId: string; channelId: string; isDm: boolean }): ToolCall[] {
   if (!text) return [];
 
   const calls: ToolCall[] = [];
@@ -231,7 +238,7 @@ function extractToolCalls(text: string): ToolCall[] {
     try {
       const parsed = JSON.parse(raw);
       logger.debug(`[ExtractToolCalls] Parsed JSON: ${JSON.stringify(parsed).substring(0, 300)}`);
-      calls.push(...normalizeToolCalls(parsed));
+      calls.push(...normalizeToolCalls(parsed, messageContext));
     } catch {
       continue;
     }
@@ -244,7 +251,7 @@ function extractToolCalls(text: string): ToolCall[] {
     try {
       const parsed = JSON.parse(trimmed);
       logger.debug(`[ExtractToolCalls] Parsed raw JSON: ${JSON.stringify(parsed).substring(0, 300)}`);
-      calls.push(...normalizeToolCalls(parsed));
+      calls.push(...normalizeToolCalls(parsed, messageContext));
     } catch {
       return [];
     }
@@ -471,7 +478,12 @@ export async function handleMessage(
     let finalReply = reply || "";
 
     if (options.allowTools !== false && reply) {
-      const toolCalls = extractToolCalls(reply);
+      const messageContext = {
+        authorId: message.author.id,
+        channelId: message.channel.id,
+        isDm: !message.guildId
+      };
+      const toolCalls = extractToolCalls(reply, messageContext);
       if (toolCalls.length > 0) {
         logger.info(`🔧 Extracted ${toolCalls.length} tool call(s): ${toolCalls.map(t => t.name).join(', ')}`);
         const results = await toolExecutor.executeTools(toolCalls);
