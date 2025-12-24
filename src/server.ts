@@ -415,12 +415,48 @@ client.on('messageCreate', async (message) => {
     trackMessage(message, client.user.id);
   }
   
-  // Let the attachment forwarder handle image attachments
+  // Handle attachments (images and voice messages)
   if (message.attachments?.size) {
     for (const [, att] of message.attachments) {
       const ct = (att as any).contentType || (att as any).content_type || '';
+
+      // Let the attachment forwarder handle image attachments
       if (typeof ct === 'string' && ct.startsWith('image/')) {
         return;
+      }
+
+      // Handle voice messages (transcribe with Whisper)
+      if (typeof ct === 'string' && (ct.startsWith('audio/') || ct.includes('ogg'))) {
+        const openaiKey = process.env.OPENAI_API_KEY || '';
+        if (!openaiKey) {
+          console.log('🎙️ Voice message received but OPENAI_API_KEY not set - skipping transcription');
+          continue;
+        }
+
+        try {
+          const { WhisperService } = await import('./services/whisperService.js');
+          const whisper = new WhisperService(openaiKey);
+
+          // Download the audio file
+          const audioResponse = await fetch((att as any).url);
+          const audioBuffer = Buffer.from(await audioResponse.arrayBuffer());
+
+          // Transcribe
+          const result = await whisper.transcribe(audioBuffer, (att as any).name || 'voice.ogg');
+
+          if (result.success && result.text) {
+            console.log(`🎙️ Transcribed voice message: "${result.text.substring(0, 100)}${result.text.length > 100 ? '...' : ''}"`);
+            // Replace message content with transcription for processing
+            message.content = `[Voice Message] ${result.text}`;
+          } else {
+            console.error(`❌ Voice transcription failed: ${result.error}`);
+          }
+        } catch (err: any) {
+          console.error(`❌ Voice transcription error: ${err.message}`);
+        }
+
+        // Don't return - continue processing the (now transcribed) message
+        break;
       }
     }
   }

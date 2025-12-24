@@ -1,4 +1,37 @@
 "use strict";
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
+    Object.defineProperty(o, "default", { enumerable: true, value: v });
+}) : function(o, v) {
+    o["default"] = v;
+});
+var __importStar = (this && this.__importStar) || (function () {
+    var ownKeys = function(o) {
+        ownKeys = Object.getOwnPropertyNames || function (o) {
+            var ar = [];
+            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
+            return ar;
+        };
+        return ownKeys(o);
+    };
+    return function (mod) {
+        if (mod && mod.__esModule) return mod;
+        var result = {};
+        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
+        __setModuleDefault(result, mod);
+        return result;
+    };
+})();
 var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
@@ -363,12 +396,43 @@ client.on('messageCreate', async (message) => {
     if (ENABLE_AUTONOMOUS && client.user?.id && message.author.id !== client.user.id) {
         (0, autonomous_1.trackMessage)(message, client.user.id);
     }
-    // Let the attachment forwarder handle image attachments
+    // Handle attachments (images and voice messages)
     if (message.attachments?.size) {
         for (const [, att] of message.attachments) {
             const ct = att.contentType || att.content_type || '';
+            // Let the attachment forwarder handle image attachments
             if (typeof ct === 'string' && ct.startsWith('image/')) {
                 return;
+            }
+            // Handle voice messages (transcribe with Whisper)
+            if (typeof ct === 'string' && (ct.startsWith('audio/') || ct.includes('ogg'))) {
+                const openaiKey = process.env.OPENAI_API_KEY || '';
+                if (!openaiKey) {
+                    console.log('🎙️ Voice message received but OPENAI_API_KEY not set - skipping transcription');
+                    continue;
+                }
+                try {
+                    const { WhisperService } = await Promise.resolve().then(() => __importStar(require('./services/whisperService.js')));
+                    const whisper = new WhisperService(openaiKey);
+                    // Download the audio file
+                    const audioResponse = await fetch(att.url);
+                    const audioBuffer = Buffer.from(await audioResponse.arrayBuffer());
+                    // Transcribe
+                    const result = await whisper.transcribe(audioBuffer, att.name || 'voice.ogg');
+                    if (result.success && result.text) {
+                        console.log(`🎙️ Transcribed voice message: "${result.text.substring(0, 100)}${result.text.length > 100 ? '...' : ''}"`);
+                        // Replace message content with transcription for processing
+                        message.content = `[Voice Message] ${result.text}`;
+                    }
+                    else {
+                        console.error(`❌ Voice transcription failed: ${result.error}`);
+                    }
+                }
+                catch (err) {
+                    console.error(`❌ Voice transcription error: ${err.message}`);
+                }
+                // Don't return - continue processing the (now transcribed) message
+                break;
             }
         }
     }

@@ -54,7 +54,7 @@ export class WebSearchService {
 
       const requestBody: any = {
         query: args.query,
-        numResults: args.num_results || 10,
+        numResults: args.num_results || 3, // Reduced from 10 to 3 to avoid context overflow
         contents: {
           text: args.include_text || false,
           highlights: true,
