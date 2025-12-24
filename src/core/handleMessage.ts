@@ -474,11 +474,19 @@ export async function handleMessage(
         logger.info(`🔧 Extracted ${toolCalls.length} tool call(s): ${toolCalls.map(t => t.name).join(', ')}`);
         const results = await toolExecutor.executeTools(toolCalls);
         logger.info(`🔧 Tool execution results: ${results.map(r => r.success ? '✅' : '❌').join(' ')}`);
-        const toolResults = formatToolResults(results);
-        const toolPacket = { ...packet, toolResults };
-        const followUp = await think(toolPacket);
-        logger.info(`🔧 Follow-up reply length: ${followUp.reply?.length || 0} chars`);
-        finalReply = followUp.reply || "";
+
+        // If send_voice_message succeeded, don't send additional text reply
+        const voiceMessageSent = results.some(r => r.tool_name === 'send_voice_message' && r.success);
+        if (voiceMessageSent) {
+          logger.info(`🎤 Voice message sent successfully - suppressing text reply`);
+          finalReply = "";
+        } else {
+          const toolResults = formatToolResults(results);
+          const toolPacket = { ...packet, toolResults };
+          const followUp = await think(toolPacket);
+          logger.info(`🔧 Follow-up reply length: ${followUp.reply?.length || 0} chars`);
+          finalReply = followUp.reply || "";
+        }
 
         // If followUp is empty, strip the JSON tool call from the original reply
         if (!finalReply && reply) {

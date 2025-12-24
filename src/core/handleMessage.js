@@ -421,11 +421,19 @@ async function handleMessage(message, options = {}) {
                 logger_js_1.logger.info(`🔧 Extracted ${toolCalls.length} tool call(s): ${toolCalls.map(t => t.name).join(', ')}`);
                 const results = await executor_js_1.toolExecutor.executeTools(toolCalls);
                 logger_js_1.logger.info(`🔧 Tool execution results: ${results.map(r => r.success ? '✅' : '❌').join(' ')}`);
-                const toolResults = formatToolResults(results);
-                const toolPacket = { ...packet, toolResults };
-                const followUp = await (0, brain_js_1.think)(toolPacket);
-                logger_js_1.logger.info(`🔧 Follow-up reply length: ${followUp.reply?.length || 0} chars`);
-                finalReply = followUp.reply || "";
+                // If send_voice_message succeeded, don't send additional text reply
+                const voiceMessageSent = results.some(r => r.tool_name === 'send_voice_message' && r.success);
+                if (voiceMessageSent) {
+                    logger_js_1.logger.info(`🎤 Voice message sent successfully - suppressing text reply`);
+                    finalReply = "";
+                }
+                else {
+                    const toolResults = formatToolResults(results);
+                    const toolPacket = { ...packet, toolResults };
+                    const followUp = await (0, brain_js_1.think)(toolPacket);
+                    logger_js_1.logger.info(`🔧 Follow-up reply length: ${followUp.reply?.length || 0} chars`);
+                    finalReply = followUp.reply || "";
+                }
                 // If followUp is empty, strip the JSON tool call from the original reply
                 if (!finalReply && reply) {
                     finalReply = reply.replace(/```json\s*[\s\S]*?```/gi, "").trim();
