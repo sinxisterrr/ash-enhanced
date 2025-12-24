@@ -1,10 +1,10 @@
 import 'dotenv/config';
 import express from 'express';
 import { Client, GatewayIntentBits, Partials } from 'discord.js';
-import { sendMessage, sendTimerMessage, MessageType } from './messages';
-import { startTaskCheckerLoop } from './taskScheduler';
-import { preprocessYouTubeLinks, handleChunkRequest } from './youtubeTranscript';
-import { handleFileChunkRequest } from './fileChunking';
+import { sendMessage, sendTimerMessage, MessageType } from './messages.js';
+import { startTaskCheckerLoop } from './taskScheduler.js';
+import { preprocessYouTubeLinks, handleChunkRequest } from './youtubeTranscript.js';
+import { handleFileChunkRequest } from './fileChunking.js';
 import { initAshSystems } from './index.js';
 import { getContextTokensPerMessage, getModelContextLength } from './utils/env.js';
 
@@ -13,19 +13,19 @@ import {
   trackMessage,
   shouldRespondAutonomously,
   recordBotReply
-} from './autonomous';
+} from './autonomous.js';
 
 // 🛠️ ADMIN COMMAND SYSTEM (Oct 16, 2025)
-import { handleAdminCommand } from './adminCommands';
+import { handleAdminCommand } from './adminCommands.js';
 
 // Import TTS functionality
 // TTS imports removed - using ElevenLabs integration instead
 
 // 📝 CONVERSATION LOGGER (for training data)
-import { initializeLogger, forceFlush, stopAutoFlush } from './conversationLogger';
+import { initializeLogger, forceFlush, stopAutoFlush } from './conversationLogger.js';
 
 // 🤖 MCP HANDLER - Rider Pi Robot Control (Dec 2025)
-import { handleMCPCommand, initMCPHandler } from './mcpHandler';
+import { handleMCPCommand, initMCPHandler } from './mcpHandler.js';
 
 // ============================================
 // 🛡️ GLOBAL ERROR HANDLERS (Nov 2025)
