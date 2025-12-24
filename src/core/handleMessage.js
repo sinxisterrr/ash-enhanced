@@ -426,6 +426,8 @@ async function handleMessage(message, options = {}) {
                 if (voiceMessageSent) {
                     logger_js_1.logger.info(`🎤 Voice message sent successfully - suppressing text reply`);
                     finalReply = "";
+                    // Add a note to STM so the bot knows it responded with voice
+                    (0, memorySystem_js_1.addToSTM)("assistant", "[Sent voice message]");
                 }
                 else {
                     const toolResults = formatToolResults(results);
