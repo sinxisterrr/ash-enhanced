@@ -418,10 +418,13 @@ async function handleMessage(message, options = {}) {
         if (options.allowTools !== false && reply) {
             const toolCalls = extractToolCalls(reply);
             if (toolCalls.length > 0) {
+                logger_js_1.logger.info(`🔧 Extracted ${toolCalls.length} tool call(s): ${toolCalls.map(t => t.name).join(', ')}`);
                 const results = await executor_js_1.toolExecutor.executeTools(toolCalls);
+                logger_js_1.logger.info(`🔧 Tool execution results: ${results.map(r => r.success ? '✅' : '❌').join(' ')}`);
                 const toolResults = formatToolResults(results);
                 const toolPacket = { ...packet, toolResults };
                 const followUp = await (0, brain_js_1.think)(toolPacket);
+                logger_js_1.logger.info(`🔧 Follow-up reply length: ${followUp.reply?.length || 0} chars`);
                 finalReply = followUp.reply || "";
                 // If followUp is empty, strip the JSON tool call from the original reply
                 if (!finalReply && reply) {
@@ -455,10 +458,15 @@ async function handleMessage(message, options = {}) {
             }
         }
         if (finalReply) {
-            if (sendReply) {
+            // CRITICAL: Strip any remaining JSON tool calls before sending to Discord
+            // This is a safety net in case tool execution fails or LLM includes JSON in follow-up
+            finalReply = finalReply.replace(/```json\s*[\s\S]*?```/gi, "").trim();
+            if (sendReply && finalReply) {
                 await (0, sendLargeMessage_js_1.sendLargeMessage)(message, finalReply);
             }
-            (0, memorySystem_js_1.addToSTM)("assistant", finalReply);
+            if (finalReply) {
+                (0, memorySystem_js_1.addToSTM)("assistant", finalReply);
+            }
             // Check for new memories and notify
             const newMemories = await (0, memorySystem_js_1.maybeDistill)(userId);
             if (newMemories.length > 0) {
