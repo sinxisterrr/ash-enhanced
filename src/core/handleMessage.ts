@@ -498,13 +498,21 @@ export async function handleMessage(
           addToSTM("assistant", "[Sent voice message]");
         } else {
           const toolResults = formatToolResults(results);
+          logger.debug(`🔧 Tool results formatted: ${toolResults.substring(0, 200)}`);
           const toolPacket = { ...packet, toolResults };
-          const followUp = await think(toolPacket);
-          logger.info(`🔧 Follow-up reply length: ${followUp.reply?.length || 0} chars`);
-          if (followUp.reply) {
-            logger.debug(`🔧 Follow-up reply content: "${followUp.reply.substring(0, 200)}"`);
+
+          try {
+            logger.info(`🔧 Calling think() for follow-up response...`);
+            const followUp = await think(toolPacket);
+            logger.info(`🔧 Follow-up reply length: ${followUp.reply?.length || 0} chars`);
+            if (followUp.reply) {
+              logger.debug(`🔧 Follow-up reply content: "${followUp.reply.substring(0, 200)}"`);
+            }
+            finalReply = followUp.reply || "";
+          } catch (err: any) {
+            logger.error(`❌ Follow-up think() failed: ${err.message || String(err)}`);
+            finalReply = "";
           }
-          finalReply = followUp.reply || "";
         }
 
         // If followUp is empty, strip the JSON tool call from the original reply

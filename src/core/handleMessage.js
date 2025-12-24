@@ -444,13 +444,21 @@ async function handleMessage(message, options = {}) {
                 }
                 else {
                     const toolResults = formatToolResults(results);
+                    logger_js_1.logger.debug(`🔧 Tool results formatted: ${toolResults.substring(0, 200)}`);
                     const toolPacket = { ...packet, toolResults };
-                    const followUp = await (0, brain_js_1.think)(toolPacket);
-                    logger_js_1.logger.info(`🔧 Follow-up reply length: ${followUp.reply?.length || 0} chars`);
-                    if (followUp.reply) {
-                        logger_js_1.logger.debug(`🔧 Follow-up reply content: "${followUp.reply.substring(0, 200)}"`);
+                    try {
+                        logger_js_1.logger.info(`🔧 Calling think() for follow-up response...`);
+                        const followUp = await (0, brain_js_1.think)(toolPacket);
+                        logger_js_1.logger.info(`🔧 Follow-up reply length: ${followUp.reply?.length || 0} chars`);
+                        if (followUp.reply) {
+                            logger_js_1.logger.debug(`🔧 Follow-up reply content: "${followUp.reply.substring(0, 200)}"`);
+                        }
+                        finalReply = followUp.reply || "";
                     }
-                    finalReply = followUp.reply || "";
+                    catch (err) {
+                        logger_js_1.logger.error(`❌ Follow-up think() failed: ${err.message || String(err)}`);
+                        finalReply = "";
+                    }
                 }
                 // If followUp is empty, strip the JSON tool call from the original reply
                 if (!finalReply && reply) {
