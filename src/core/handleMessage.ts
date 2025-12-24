@@ -507,8 +507,34 @@ export async function handleMessage(
             logger.info(`🔧 Follow-up reply length: ${followUp.reply?.length || 0} chars`);
             if (followUp.reply) {
               logger.debug(`🔧 Follow-up reply content: "${followUp.reply.substring(0, 200)}"`);
+
+              // Check if follow-up contains more tool calls (recursive tool execution)
+              const followUpToolCalls = extractToolCalls(followUp.reply, messageContext);
+              if (followUpToolCalls.length > 0) {
+                logger.warn(`⚠️  Follow-up contains ${followUpToolCalls.length} more tool calls - stripping to prevent loops`);
+                // Strip the tool calls from the follow-up
+                finalReply = followUp.reply.replace(/```json\s*[\s\S]*?```/gi, "").trim();
+                if (finalReply.startsWith("{") || finalReply.startsWith("[")) {
+                  // Strip raw JSON
+                  let braceCount = 0;
+                  for (let i = 0; i < finalReply.length; i++) {
+                    const char = finalReply[i];
+                    if (char === "{" || char === "[") braceCount++;
+                    else if (char === "}" || char === "]") {
+                      braceCount--;
+                      if (braceCount === 0) {
+                        finalReply = finalReply.substring(i + 1).trim();
+                        break;
+                      }
+                    }
+                  }
+                }
+              } else {
+                finalReply = followUp.reply;
+              }
+            } else {
+              finalReply = "";
             }
-            finalReply = followUp.reply || "";
           } catch (err: any) {
             logger.error(`❌ Follow-up think() failed: ${err.message || String(err)}`);
             finalReply = "";
