@@ -30,8 +30,12 @@ export class SpotifyService {
     const clientSecret = process.env.SPOTIFY_CLIENT_SECRET || "";
     const refreshToken = process.env.SPOTIFY_REFRESH_TOKEN || "";
 
-    if (!clientId || !clientSecret || !refreshToken) {
-      throw new Error("Missing Spotify credentials! Need SPOTIFY_CLIENT_ID, SPOTIFY_CLIENT_SECRET, and SPOTIFY_REFRESH_TOKEN");
+    if (!clientId || !clientSecret) {
+      throw new Error("Missing Spotify credentials! Need SPOTIFY_CLIENT_ID and SPOTIFY_CLIENT_SECRET");
+    }
+
+    if (!refreshToken) {
+      throw new Error("Missing SPOTIFY_REFRESH_TOKEN! Please add it to Railway environment variables. Get it from https://developer.spotify.com/console/");
     }
 
     this.config = {
