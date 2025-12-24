@@ -39,22 +39,22 @@ Object.defineProperty(exports, "__esModule", { value: true });
 require("dotenv/config");
 const express_1 = __importDefault(require("express"));
 const discord_js_1 = require("discord.js");
-const messages_1 = require("./messages");
-const taskScheduler_1 = require("./taskScheduler");
-const youtubeTranscript_1 = require("./youtubeTranscript");
-const fileChunking_1 = require("./fileChunking");
+const messages_js_1 = require("./messages.js");
+const taskScheduler_js_1 = require("./taskScheduler.js");
+const youtubeTranscript_js_1 = require("./youtubeTranscript.js");
+const fileChunking_js_1 = require("./fileChunking.js");
 const index_js_1 = require("./index.js");
 const env_js_1 = require("./utils/env.js");
 // 🔒 AUTONOMOUS BOT-LOOP PREVENTION SYSTEM
-const autonomous_1 = require("./autonomous");
+const autonomous_js_1 = require("./autonomous.js");
 // 🛠️ ADMIN COMMAND SYSTEM (Oct 16, 2025)
-const adminCommands_1 = require("./adminCommands");
+const adminCommands_js_1 = require("./adminCommands.js");
 // Import TTS functionality
 // TTS imports removed - using ElevenLabs integration instead
 // 📝 CONVERSATION LOGGER (for training data)
-const conversationLogger_1 = require("./conversationLogger");
+const conversationLogger_js_1 = require("./conversationLogger.js");
 // 🤖 MCP HANDLER - Rider Pi Robot Control (Dec 2025)
-const mcpHandler_1 = require("./mcpHandler");
+const mcpHandler_js_1 = require("./mcpHandler.js");
 // ============================================
 // 🛡️ GLOBAL ERROR HANDLERS (Nov 2025)
 // ============================================
@@ -91,8 +91,8 @@ async function gracefulShutdown(signal) {
     try {
         // Flush conversation logs before exit
         console.log('📝 Flushing conversation logs...');
-        await (0, conversationLogger_1.forceFlush)();
-        await (0, conversationLogger_1.stopAutoFlush)();
+        await (0, conversationLogger_js_1.forceFlush)();
+        await (0, conversationLogger_js_1.stopAutoFlush)();
         console.log('✅ Conversation logs flushed successfully');
     }
     catch (error) {
@@ -274,13 +274,13 @@ client.once('ready', async () => {
     console.log(`🔒 Bot-Loop Prevention: ${ENABLE_AUTONOMOUS ? 'ENABLED ✅' : 'DISABLED ⚠️'}`);
     console.log(`🔒 Self-Spam Prevention: ${ENABLE_AUTONOMOUS ? 'Active (Max 3 consecutive) ✅' : 'DISABLED ⚠️'}`);
     // 📝 Initialize conversation logger (for training data)
-    (0, conversationLogger_1.initializeLogger)();
+    (0, conversationLogger_js_1.initializeLogger)();
     // 🤖 Initialize MCP Handler (Rider Pi Robot Control)
-    (0, mcpHandler_1.initMCPHandler)();
+    (0, mcpHandler_js_1.initMCPHandler)();
     // 🌿 Initialize Ash core systems (memory + soma)
     await (0, index_js_1.initAshSystems)();
     // Start background task scheduler
-    (0, taskScheduler_1.startTaskCheckerLoop)(client);
+    (0, taskScheduler_js_1.startTaskCheckerLoop)(client);
 });
 // Helper function to send a message and receive a response
 async function processAndSendMessage(message, messageType, conversationContext = null, customContent = null) {
@@ -288,28 +288,14 @@ async function processAndSendMessage(message, messageType, conversationContext =
         if (message?.channel?.sendTyping) {
             await message.channel.sendTyping();
         }
-        const msg = await (0, messages_1.sendMessage)(message, messageType, conversationContext, customContent);
-        if (msg !== "") {
+        const msg = await (0, messages_js_1.sendMessage)(message, messageType, conversationContext, customContent);
+        // sendMessage already sends the reply via sendLargeMessage - no need to send again
+        if (msg !== "" && ENABLE_AUTONOMOUS && client.user?.id) {
             // 🔒 Record that bot replied (for pingpong tracking)
-            if (ENABLE_AUTONOMOUS && client.user?.id) {
-                const wasFarewell = msg.toLowerCase().includes('gotta go') ||
-                    msg.toLowerCase().includes('catch you later') ||
-                    msg.toLowerCase().includes('step away');
-                (0, autonomous_1.recordBotReply)(message.channel.id, client.user.id, wasFarewell);
-            }
-            if (msg.length <= 1900) {
-                await message.reply(msg);
-                console.log(`Message sent: ${msg}`);
-            }
-            else {
-                const chunks = chunkText(msg, 1900);
-                await message.reply(chunks[0]);
-                for (let i = 1; i < chunks.length; i++) {
-                    await new Promise(r => setTimeout(r, 200));
-                    await message.channel.send(chunks[i]);
-                }
-                console.log(`Message sent in ${chunks.length} chunks.`);
-            }
+            const wasFarewell = msg.toLowerCase().includes('gotta go') ||
+                msg.toLowerCase().includes('catch you later') ||
+                msg.toLowerCase().includes('step away');
+            (0, autonomous_js_1.recordBotReply)(message.channel.id, client.user.id, wasFarewell);
         }
     }
     catch (error) {
@@ -368,7 +354,7 @@ async function startRandomEventTimer() {
                 console.log("⏰ No channel ID configured (HEARTBEAT_LOG_CHANNEL_ID and CHANNEL_ID both undefined)");
             }
             // 💰 ONLY make API call if probability check passed!
-            const msg = await (0, messages_1.sendTimerMessage)(channel);
+            const msg = await (0, messages_js_1.sendTimerMessage)(channel);
             if (msg !== "" && channel) {
                 try {
                     await channel.send(msg);
@@ -394,7 +380,7 @@ async function startRandomEventTimer() {
 client.on('messageCreate', async (message) => {
     // 🔒 AUTONOMOUS: Track ALL messages for context (EXCEPT our own bot messages to save credits!)
     if (ENABLE_AUTONOMOUS && client.user?.id && message.author.id !== client.user.id) {
-        (0, autonomous_1.trackMessage)(message, client.user.id);
+        (0, autonomous_js_1.trackMessage)(message, client.user.id);
     }
     // Handle attachments (images and voice messages)
     if (message.attachments?.size) {
@@ -439,7 +425,7 @@ client.on('messageCreate', async (message) => {
     // 🤖 MCP COMMAND HANDLER - Rider Pi Robot Control (Dec 2025)
     // Process MCP commands from the dedicated channel BEFORE other filters
     // This allows Letta to control the robot via Discord messages
-    if (await (0, mcpHandler_1.handleMCPCommand)(message, client)) {
+    if (await (0, mcpHandler_js_1.handleMCPCommand)(message, client)) {
         return; // MCP command was handled
     }
     // Filter channels if CHANNEL_ID is set, but ALWAYS allow DMs through
@@ -455,7 +441,7 @@ client.on('messageCreate', async (message) => {
     // CRITICAL: Check BEFORE autonomous mode to prevent blocking!
     // Admin commands should ALWAYS work, even with autonomous mode enabled
     if (message.content.startsWith('!') && client.user?.id) {
-        const adminResponse = await (0, adminCommands_1.handleAdminCommand)(message, client.user.id);
+        const adminResponse = await (0, adminCommands_js_1.handleAdminCommand)(message, client.user.id);
         if (adminResponse) {
             // Admin command was handled
             await message.reply(adminResponse);
@@ -467,7 +453,7 @@ client.on('messageCreate', async (message) => {
     // 🔒 AUTONOMOUS: Check if we should respond (bot-loop prevention)
     let conversationContext = null;
     if (ENABLE_AUTONOMOUS && client.user?.id) {
-        const decision = await (0, autonomous_1.shouldRespondAutonomously)(message, client.user.id, {
+        const decision = await (0, autonomous_js_1.shouldRespondAutonomously)(message, client.user.id, {
             respondToDMs: RESPOND_TO_DMS,
             respondToMentions: RESPOND_TO_MENTIONS,
             respondToBots: RESPOND_TO_BOTS,
@@ -497,30 +483,30 @@ client.on('messageCreate', async (message) => {
     // 📄 FILE CHUNK REQUEST HANDLER (Nov 20, 2025)
     // Check for file chunk requests BEFORE YouTube chunk requests
     console.log('📄 Checking for file chunk requests...');
-    const fileChunkResponse = (0, fileChunking_1.handleFileChunkRequest)(message.content);
+    const fileChunkResponse = (0, fileChunking_js_1.handleFileChunkRequest)(message.content);
     if (fileChunkResponse) {
         console.log('📖 File chunk request detected - processing');
         console.log(`📖 Request content: ${message.content.substring(0, 100)}...`);
         console.log('📖 Sending file chunk response to Letta');
         // Determine message type
-        let messageType = messages_1.MessageType.GENERIC;
+        let messageType = messages_js_1.MessageType.GENERIC;
         if (message.guild === null) {
-            messageType = messages_1.MessageType.DM;
+            messageType = messages_js_1.MessageType.DM;
         }
         else if (message.mentions.has(client.user || '') || message.reference) {
-            messageType = messages_1.MessageType.MENTION;
+            messageType = messages_js_1.MessageType.MENTION;
         }
         if (message?.channel?.sendTyping) {
             await message.channel.sendTyping();
         }
-        const msg = await (0, messages_1.sendMessage)(message, messageType, conversationContext, fileChunkResponse);
+        const msg = await (0, messages_js_1.sendMessage)(message, messageType, conversationContext, fileChunkResponse);
         if (msg !== "") {
             // 🔒 Record that bot replied (for pingpong tracking)
             if (ENABLE_AUTONOMOUS && client.user?.id) {
                 const wasFarewell = msg.toLowerCase().includes('gotta go') ||
                     msg.toLowerCase().includes('catch you later') ||
                     msg.toLowerCase().includes('step away');
-                (0, autonomous_1.recordBotReply)(message.channel.id, client.user.id, wasFarewell);
+                (0, autonomous_js_1.recordBotReply)(message.channel.id, client.user.id, wasFarewell);
             }
             if (msg.length <= 1900) {
                 await message.reply(msg);
@@ -541,31 +527,31 @@ client.on('messageCreate', async (message) => {
     // 🎥 YOUTUBE CHUNK/INFO REQUEST HANDLER (Oct 26, 2025)
     // Check for chunk/info requests BEFORE processing YouTube links
     console.log(`🎥 Checking for YouTube chunk/info requests in: "${message.content.substring(0, 200)}"`);
-    const chunkResponse = (0, youtubeTranscript_1.handleChunkRequest)(message.content);
+    const chunkResponse = (0, youtubeTranscript_js_1.handleChunkRequest)(message.content);
     if (chunkResponse) {
         console.log('✅ YouTube chunk/info request detected - processing');
         console.log(`📖 Request content: ${message.content.substring(0, 100)}...`);
         console.log(`📖 Chunk response length: ${chunkResponse.length} characters`);
         console.log('📖 Sending chunk/info response to Letta');
         // Determine message type
-        let messageType = messages_1.MessageType.GENERIC;
+        let messageType = messages_js_1.MessageType.GENERIC;
         if (message.guild === null) {
-            messageType = messages_1.MessageType.DM;
+            messageType = messages_js_1.MessageType.DM;
         }
         else if (message.mentions.has(client.user || '') || message.reference) {
-            messageType = messages_1.MessageType.MENTION;
+            messageType = messages_js_1.MessageType.MENTION;
         }
         if (message?.channel?.sendTyping) {
             await message.channel.sendTyping();
         }
-        const msg = await (0, messages_1.sendMessage)(message, messageType, conversationContext, chunkResponse);
+        const msg = await (0, messages_js_1.sendMessage)(message, messageType, conversationContext, chunkResponse);
         if (msg !== "") {
             // 🔒 Record that bot replied (for pingpong tracking)
             if (ENABLE_AUTONOMOUS && client.user?.id) {
                 const wasFarewell = msg.toLowerCase().includes('gotta go') ||
                     msg.toLowerCase().includes('catch you later') ||
                     msg.toLowerCase().includes('step away');
-                (0, autonomous_1.recordBotReply)(message.channel.id, client.user.id, wasFarewell);
+                (0, autonomous_js_1.recordBotReply)(message.channel.id, client.user.id, wasFarewell);
             }
             if (msg.length <= 1900) {
                 await message.reply(msg);
@@ -599,7 +585,7 @@ client.on('messageCreate', async (message) => {
     else {
         console.log('🎥 No YouTube links found - skipping transcript processing');
     }
-    const youtubeResult = await (0, youtubeTranscript_1.preprocessYouTubeLinks)(message.content, async () => await message.channel.sendTyping());
+    const youtubeResult = await (0, youtubeTranscript_js_1.preprocessYouTubeLinks)(message.content, async () => await message.channel.sendTyping());
     // Delete status message and send completion info
     if (statusMessage) {
         await statusMessage.delete().catch(() => console.log('⚠️ Could not delete status message'));
@@ -633,7 +619,7 @@ client.on('messageCreate', async (message) => {
             if (processedContent) {
                 console.log('📺 Transcript(s) attached to message - sending to Letta');
             }
-            processAndSendMessage(message, messages_1.MessageType.DM, conversationContext, processedContent);
+            processAndSendMessage(message, messages_js_1.MessageType.DM, conversationContext, processedContent);
         }
         else {
             console.log(`📩 Ignoring DM...`);
@@ -644,14 +630,14 @@ client.on('messageCreate', async (message) => {
     if (RESPOND_TO_MENTIONS && (message.mentions.has(client.user || '') || message.reference)) {
         console.log(`📩 Received message from ${message.author.username}: ${message.content}`);
         await message.channel.sendTyping();
-        let messageType = messages_1.MessageType.MENTION;
+        let messageType = messages_js_1.MessageType.MENTION;
         if (message.reference && message.reference.messageId) {
             const originalMessage = await message.channel.messages.fetch(message.reference.messageId);
             if (originalMessage.author.id === client.user?.id) {
-                messageType = messages_1.MessageType.REPLY;
+                messageType = messages_js_1.MessageType.REPLY;
             }
             else {
-                messageType = message.mentions.has(client.user || '') ? messages_1.MessageType.MENTION : messages_1.MessageType.GENERIC;
+                messageType = message.mentions.has(client.user || '') ? messages_js_1.MessageType.MENTION : messages_js_1.MessageType.GENERIC;
             }
         }
         // If content was modified (transcript added), send with custom content
@@ -661,16 +647,14 @@ client.on('messageCreate', async (message) => {
         if (message?.channel?.sendTyping) {
             await message.channel.sendTyping();
         }
-        const msg = await (0, messages_1.sendMessage)(message, messageType, conversationContext, processedContent);
-        if (msg !== "") {
+        const msg = await (0, messages_js_1.sendMessage)(message, messageType, conversationContext, processedContent);
+        // sendMessage already sends the reply via sendLargeMessage - no need to send again
+        if (msg !== "" && ENABLE_AUTONOMOUS && client.user?.id) {
             // 🔒 Record bot reply
-            if (ENABLE_AUTONOMOUS && client.user?.id) {
-                const wasFarewell = msg.toLowerCase().includes('gotta go') ||
-                    msg.toLowerCase().includes('catch you later') ||
-                    msg.toLowerCase().includes('step away');
-                (0, autonomous_1.recordBotReply)(message.channel.id, client.user.id, wasFarewell);
-            }
-            await message.reply(msg);
+            const wasFarewell = msg.toLowerCase().includes('gotta go') ||
+                msg.toLowerCase().includes('catch you later') ||
+                msg.toLowerCase().includes('step away');
+            (0, autonomous_js_1.recordBotReply)(message.channel.id, client.user.id, wasFarewell);
         }
         return;
     }
@@ -681,7 +665,7 @@ client.on('messageCreate', async (message) => {
         if (processedContent) {
             console.log('📺 Transcript(s) attached to message - sending to Letta');
         }
-        processAndSendMessage(message, messages_1.MessageType.GENERIC, conversationContext, processedContent);
+        processAndSendMessage(message, messages_js_1.MessageType.GENERIC, conversationContext, processedContent);
         return;
     }
 });
@@ -795,6 +779,80 @@ app.post('/api/midjourney/generate', (req, res) => {
         console.error('❌ [MJ Proxy] Uncaught error:', e);
         res.status(500).json({ status: 'error', error: String(e?.message || e) });
     });
+});
+// ============================================
+// Spotify OAuth Flow (for getting refresh token)
+// ============================================
+let spotifyRefreshToken = null;
+app.get('/spotify/auth', (req, res) => {
+    const CLIENT_ID = process.env.SPOTIFY_CLIENT_ID || '';
+    const REDIRECT_URI = `${process.env.RAILWAY_PUBLIC_DOMAIN ? 'https://' + process.env.RAILWAY_PUBLIC_DOMAIN : 'http://localhost:' + PORT}/spotify/callback`;
+    const SCOPES = [
+        'user-read-playback-state',
+        'user-modify-playback-state',
+        'user-read-currently-playing',
+        'playlist-modify-public',
+        'playlist-modify-private',
+        'playlist-read-private',
+        'playlist-read-collaborative',
+        'user-library-read',
+        'user-library-modify',
+    ].join(' ');
+    const authUrl = `https://accounts.spotify.com/authorize?${new URLSearchParams({
+        client_id: CLIENT_ID,
+        response_type: 'code',
+        redirect_uri: REDIRECT_URI,
+        scope: SCOPES,
+    })}`;
+    res.send(`
+    <h1>Spotify Token Generator</h1>
+    <p>Click the button below to authorize Ash with Spotify:</p>
+    <a href="${authUrl}"><button style="padding: 10px 20px; font-size: 16px; cursor: pointer;">Authorize Spotify</button></a>
+  `);
+});
+app.get('/spotify/callback', async (req, res) => {
+    const code = req.query.code;
+    const CLIENT_ID = process.env.SPOTIFY_CLIENT_ID || '';
+    const CLIENT_SECRET = process.env.SPOTIFY_CLIENT_SECRET || '';
+    const REDIRECT_URI = `${process.env.RAILWAY_PUBLIC_DOMAIN ? 'https://' + process.env.RAILWAY_PUBLIC_DOMAIN : 'http://localhost:' + PORT}/spotify/callback`;
+    if (!code) {
+        res.send('<h1>Error: No authorization code received</h1>');
+        return;
+    }
+    try {
+        // Exchange code for tokens
+        const tokenResponse = await fetch('https://accounts.spotify.com/api/token', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/x-www-form-urlencoded',
+                'Authorization': 'Basic ' + Buffer.from(CLIENT_ID + ':' + CLIENT_SECRET).toString('base64'),
+            },
+            body: new URLSearchParams({
+                grant_type: 'authorization_code',
+                code: code,
+                redirect_uri: REDIRECT_URI,
+            }),
+        });
+        const data = await tokenResponse.json();
+        if (data.refresh_token) {
+            spotifyRefreshToken = data.refresh_token;
+            res.send(`
+        <h1>✅ Success!</h1>
+        <p>Copy this refresh token to Railway:</p>
+        <pre style="background: #f0f0f0; padding: 20px; margin: 20px 0; font-size: 14px; overflow-x: auto;">${spotifyRefreshToken}</pre>
+        <p><strong>Add it to Railway as:</strong> <code>SPOTIFY_REFRESH_TOKEN</code></p>
+        <p>You can close this window now.</p>
+      `);
+            console.log('\n✅ SUCCESS! Copy this to Railway as SPOTIFY_REFRESH_TOKEN:');
+            console.log('\n' + spotifyRefreshToken + '\n');
+        }
+        else {
+            res.send(`<h1>Error: ${JSON.stringify(data)}</h1>`);
+        }
+    }
+    catch (err) {
+        res.send(`<h1>Error: ${err.message}</h1>`);
+    }
 });
 // ============================================
 // Health Check Endpoints
