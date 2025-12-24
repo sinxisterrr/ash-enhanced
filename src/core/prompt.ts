@@ -191,10 +191,12 @@ ${voiceNoteHint}
 ${voiceTargetLine}
 
 Tool-use protocol:
-- Only output a tool call when you truly need it.
+- When you want to send a voice message, you MUST call the send_voice_message tool
+- NEVER describe or narrate what a voice message would sound like - actually call the tool instead
 - When calling a tool, output ONLY a JSON object in this format (wrapped in \`\`\`json\`\`\` markers):
   {"name": "tool_name", "arguments": {"param1": "value1"}}
-- Otherwise, never output JSON blocks.
+- If you're feeling a particular gender presentation (masc/femme), use voice_presentation parameter
+- Otherwise, never output JSON blocks
 
 Available tools:
 ${toolRegistry.getAllTools().map(t => `- ${t.name}: ${t.description}`).join('\n')}
