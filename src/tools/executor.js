@@ -19,6 +19,7 @@ const logger_js_1 = require("../utils/logger.js");
 const restSendVoice_js_1 = require("../discord/restSendVoice.js");
 const webSearchService_js_1 = require("../services/webSearchService.js");
 const heartbeatService_js_1 = require("../services/heartbeatService.js");
+const spotifyService_js_1 = require("../services/spotifyService.js");
 function ensureToolCallId(toolCall) {
     return toolCall.id ?? (0, crypto_1.randomUUID)();
 }
@@ -278,7 +279,75 @@ class ToolExecutor {
                     };
                 }
             }
-            case "spotify_control":
+            case "spotify_control": {
+                try {
+                    logger_js_1.logger.info(`🎵 Executing spotify_control tool`);
+                    const spotify = new spotifyService_js_1.SpotifyService();
+                    const args = toolCall.arguments;
+                    let result = "";
+                    switch (args.action) {
+                        case "execute_batch":
+                            result = await spotify.executeBatch(args.operations || []);
+                            break;
+                        case "search":
+                            const searchResults = await spotify.search(args.query, args.content_type || "track", args.limit || 10);
+                            result = JSON.stringify(searchResults, null, 2);
+                            break;
+                        case "play":
+                            if (args.query) {
+                                result = await spotify.searchAndPlay(args.query, args.content_type || "track");
+                            }
+                            else if (args.spotify_id) {
+                                await spotify.play(`spotify:${args.content_type || "track"}:${args.spotify_id}`);
+                                result = "Playing";
+                            }
+                            break;
+                        case "pause":
+                            result = await spotify.pause();
+                            break;
+                        case "next":
+                            result = await spotify.next();
+                            break;
+                        case "previous":
+                            result = await spotify.previous();
+                            break;
+                        case "now_playing":
+                            result = await spotify.getNowPlaying();
+                            break;
+                        case "create_playlist":
+                            if (args.songs) {
+                                result = await spotify.createPlaylistWithSongs(args.playlist_name, args.songs, args.playlist_description);
+                            }
+                            else {
+                                const playlist = await spotify.createPlaylist(args.playlist_name, args.playlist_description);
+                                result = `Created playlist "${playlist.name}"`;
+                            }
+                            break;
+                        case "my_playlists":
+                            result = await spotify.getMyPlaylists(args.limit || 20);
+                            break;
+                        default:
+                            result = `Unknown action: ${args.action}`;
+                    }
+                    logger_js_1.logger.info(`✅ spotify_control completed: ${result.substring(0, 100)}`);
+                    return {
+                        tool_call_id: toolCallId,
+                        tool_name: toolCall.name,
+                        result,
+                        success: true,
+                    };
+                }
+                catch (err) {
+                    logger_js_1.logger.error(`❌ spotify_control threw exception: ${err.message || String(err)}`);
+                    return {
+                        tool_call_id: toolCallId,
+                        tool_name: toolCall.name,
+                        result: `Error: ${err.message || String(err)}`,
+                        success: false,
+                        error: err.message || String(err),
+                    };
+                }
+            }
             case "conversation_search":
             case "archival_memory_search":
                 return {
