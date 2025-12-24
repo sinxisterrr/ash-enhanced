@@ -14,6 +14,7 @@ import { toolRegistry } from "./registry.js";
 import { logger } from "../utils/logger.js";
 import { sendVoiceMessageViaRest } from "../discord/restSendVoice.js";
 import { WebSearchService } from "../services/webSearchService.js";
+import { HeartbeatService } from "../services/heartbeatService.js";
 
 type ToolHook = (toolCall: ToolCall, result: ToolResult) => void | Promise<void>;
 
@@ -82,7 +83,7 @@ export class ToolExecutor {
     let result: ToolResult;
 
     // Prefer built-in JS implementation for certain tools (Railway has no python3)
-    if (toolCall.name === "send_voice_message" || toolCall.name === "web_search") {
+    if (toolCall.name === "send_voice_message" || toolCall.name === "web_search" || toolCall.name === "send_heartbeat") {
       result = await this.executeBuiltInTool({ ...toolCall, id: toolCallId });
     } else if (tool.pythonScript) {
       // If tool has Python script, execute it
@@ -270,6 +271,37 @@ export class ToolExecutor {
           };
         } catch (err: any) {
           logger.error(`❌ web_search threw exception: ${err.message || String(err)}`);
+          return {
+            tool_call_id: toolCallId,
+            tool_name: toolCall.name,
+            result: `Error executing tool: ${err.message || String(err)}`,
+            success: false,
+            error: err.message || String(err),
+          };
+        }
+      }
+
+      case "send_heartbeat": {
+        try {
+          logger.info(`💜 Executing send_heartbeat tool`);
+          const heartbeatService = new HeartbeatService();
+          const result = await heartbeatService.sendHeartbeat(toolCall.arguments as any);
+
+          const isSuccess = !result.toLowerCase().startsWith("error");
+          if (isSuccess) {
+            logger.info(`✅ send_heartbeat completed: ${result}`);
+          } else {
+            logger.error(`❌ send_heartbeat failed: ${result}`);
+          }
+
+          return {
+            tool_call_id: toolCallId,
+            tool_name: toolCall.name,
+            result,
+            success: isSuccess,
+          };
+        } catch (err: any) {
+          logger.error(`❌ send_heartbeat threw exception: ${err.message || String(err)}`);
           return {
             tool_call_id: toolCallId,
             tool_name: toolCall.name,
