@@ -13,6 +13,7 @@ import { ToolCall, ToolResult } from "./types.js";
 import { toolRegistry } from "./registry.js";
 import { logger } from "../utils/logger.js";
 import { sendVoiceMessageViaRest } from "../discord/restSendVoice.js";
+import { WebSearchService } from "../services/webSearchService.js";
 
 type ToolHook = (toolCall: ToolCall, result: ToolResult) => void | Promise<void>;
 
@@ -80,8 +81,8 @@ export class ToolExecutor {
 
     let result: ToolResult;
 
-    // Prefer built-in JS implementation for voice messages (Railway has no python3)
-    if (toolCall.name === "send_voice_message") {
+    // Prefer built-in JS implementation for certain tools (Railway has no python3)
+    if (toolCall.name === "send_voice_message" || toolCall.name === "web_search") {
       result = await this.executeBuiltInTool({ ...toolCall, id: toolCallId });
     } else if (tool.pythonScript) {
       // If tool has Python script, execute it
@@ -228,6 +229,57 @@ export class ToolExecutor {
           };
         }
       }
+      case "web_search": {
+        try {
+          logger.info(`🔍 Executing web_search tool`);
+          const apiKey = process.env.EXA_API_KEY || "";
+          if (!apiKey) {
+            logger.error("[WebSearch] EXA_API_KEY is not set!");
+            return {
+              tool_call_id: toolCallId,
+              tool_name: toolCall.name,
+              result: "Error: EXA_API_KEY is not set.",
+              success: false,
+              error: "Missing API key",
+            };
+          }
+
+          const searchService = new WebSearchService(apiKey);
+          const searchResult = await searchService.search(toolCall.arguments as any);
+
+          if (!searchResult.success) {
+            logger.error(`❌ web_search failed: ${searchResult.error}`);
+            return {
+              tool_call_id: toolCallId,
+              tool_name: toolCall.name,
+              result: `Error: ${searchResult.error}`,
+              success: false,
+              error: searchResult.error,
+            };
+          }
+
+          // Format results as JSON string
+          const formattedResults = JSON.stringify(searchResult.results, null, 2);
+          logger.info(`✅ web_search completed: ${searchResult.results?.length || 0} results`);
+
+          return {
+            tool_call_id: toolCallId,
+            tool_name: toolCall.name,
+            result: formattedResults,
+            success: true,
+          };
+        } catch (err: any) {
+          logger.error(`❌ web_search threw exception: ${err.message || String(err)}`);
+          return {
+            tool_call_id: toolCallId,
+            tool_name: toolCall.name,
+            result: `Error executing tool: ${err.message || String(err)}`,
+            success: false,
+            error: err.message || String(err),
+          };
+        }
+      }
+
       case "conversation_search":
       case "archival_memory_search":
         return {
