@@ -173,7 +173,7 @@ function parseManualMemoryCommand(text) {
     }
     return { summary, type, tags };
 }
-function normalizeToolCalls(parsed) {
+function normalizeToolCalls(parsed, messageContext) {
     const items = Array.isArray(parsed) ? parsed : [parsed];
     const calls = [];
     for (const item of items) {
@@ -189,6 +189,12 @@ function normalizeToolCalls(parsed) {
                 : typeof item.args === "object" && item.args !== null
                     ? item.args
                     : {};
+        // Inject target for send_voice_message if missing
+        if (name === "send_voice_message" && messageContext && !args.target) {
+            args.target = messageContext.isDm ? messageContext.authorId : messageContext.channelId;
+            args.target_type = messageContext.isDm ? "user" : "channel";
+            logger_js_1.logger.debug(`[NormalizeToolCalls] Injected missing target: ${args.target} (${args.target_type})`);
+        }
         calls.push({
             id: item.id,
             name,
@@ -197,7 +203,7 @@ function normalizeToolCalls(parsed) {
     }
     return calls;
 }
-function extractToolCalls(text) {
+function extractToolCalls(text, messageContext) {
     if (!text)
         return [];
     const calls = [];
@@ -210,7 +216,7 @@ function extractToolCalls(text) {
         try {
             const parsed = JSON.parse(raw);
             logger_js_1.logger.debug(`[ExtractToolCalls] Parsed JSON: ${JSON.stringify(parsed).substring(0, 300)}`);
-            calls.push(...normalizeToolCalls(parsed));
+            calls.push(...normalizeToolCalls(parsed, messageContext));
         }
         catch {
             continue;
@@ -223,7 +229,7 @@ function extractToolCalls(text) {
         try {
             const parsed = JSON.parse(trimmed);
             logger_js_1.logger.debug(`[ExtractToolCalls] Parsed raw JSON: ${JSON.stringify(parsed).substring(0, 300)}`);
-            calls.push(...normalizeToolCalls(parsed));
+            calls.push(...normalizeToolCalls(parsed, messageContext));
         }
         catch {
             return [];
@@ -418,7 +424,12 @@ async function handleMessage(message, options = {}) {
         let { reply } = await (0, brain_js_1.think)(packet);
         let finalReply = reply || "";
         if (options.allowTools !== false && reply) {
-            const toolCalls = extractToolCalls(reply);
+            const messageContext = {
+                authorId: message.author.id,
+                channelId: message.channel.id,
+                isDm: !message.guildId
+            };
+            const toolCalls = extractToolCalls(reply, messageContext);
             if (toolCalls.length > 0) {
                 logger_js_1.logger.info(`🔧 Extracted ${toolCalls.length} tool call(s): ${toolCalls.map(t => t.name).join(', ')}`);
                 const results = await executor_js_1.toolExecutor.executeTools(toolCalls);

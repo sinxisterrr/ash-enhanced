@@ -17,6 +17,7 @@ const crypto_1 = require("crypto");
 const registry_js_1 = require("./registry.js");
 const logger_js_1 = require("../utils/logger.js");
 const restSendVoice_js_1 = require("../discord/restSendVoice.js");
+const webSearchService_js_1 = require("../services/webSearchService.js");
 function ensureToolCallId(toolCall) {
     return toolCall.id ?? (0, crypto_1.randomUUID)();
 }
@@ -53,7 +54,9 @@ class ToolExecutor {
             return { tool_call_id: toolCall.id, tool_name: toolCall.name, success: false,
                 result: "Missing required field: reason", error: "Missing reason" };
         }
-        if (needsIntent(toolCall.name) && typeof args.intent !== "string") {
+        // Make intent optional for send_voice_message (it's just for context/logging)
+        // Other tools that need intent (discord_tool, rider_pi_tool) should still require it
+        if (needsIntent(toolCall.name) && toolCall.name !== "send_voice_message" && typeof args.intent !== "string") {
             logger_js_1.logger.warn(`[ToolExecutor] ${toolCall.name} missing required field: intent (got type: ${typeof args.intent})`);
             return { tool_call_id: toolCall.id, tool_name: toolCall.name, success: false,
                 result: "Missing required field: intent", error: "Missing intent" };
@@ -68,8 +71,8 @@ class ToolExecutor {
             };
         }
         let result;
-        // Prefer built-in JS implementation for voice messages (Railway has no python3)
-        if (toolCall.name === "send_voice_message") {
+        // Prefer built-in JS implementation for certain tools (Railway has no python3)
+        if (toolCall.name === "send_voice_message" || toolCall.name === "web_search") {
             result = await this.executeBuiltInTool({ ...toolCall, id: toolCallId });
         }
         else if (tool.pythonScript) {
@@ -187,6 +190,53 @@ class ToolExecutor {
                 }
                 catch (err) {
                     logger_js_1.logger.error(`❌ send_voice_message threw exception: ${err.message || String(err)}`);
+                    return {
+                        tool_call_id: toolCallId,
+                        tool_name: toolCall.name,
+                        result: `Error executing tool: ${err.message || String(err)}`,
+                        success: false,
+                        error: err.message || String(err),
+                    };
+                }
+            }
+            case "web_search": {
+                try {
+                    logger_js_1.logger.info(`🔍 Executing web_search tool`);
+                    const apiKey = process.env.EXA_API_KEY || "";
+                    if (!apiKey) {
+                        logger_js_1.logger.error("[WebSearch] EXA_API_KEY is not set!");
+                        return {
+                            tool_call_id: toolCallId,
+                            tool_name: toolCall.name,
+                            result: "Error: EXA_API_KEY is not set.",
+                            success: false,
+                            error: "Missing API key",
+                        };
+                    }
+                    const searchService = new webSearchService_js_1.WebSearchService(apiKey);
+                    const searchResult = await searchService.search(toolCall.arguments);
+                    if (!searchResult.success) {
+                        logger_js_1.logger.error(`❌ web_search failed: ${searchResult.error}`);
+                        return {
+                            tool_call_id: toolCallId,
+                            tool_name: toolCall.name,
+                            result: `Error: ${searchResult.error}`,
+                            success: false,
+                            error: searchResult.error,
+                        };
+                    }
+                    // Format results as JSON string
+                    const formattedResults = JSON.stringify(searchResult.results, null, 2);
+                    logger_js_1.logger.info(`✅ web_search completed: ${searchResult.results?.length || 0} results`);
+                    return {
+                        tool_call_id: toolCallId,
+                        tool_name: toolCall.name,
+                        result: formattedResults,
+                        success: true,
+                    };
+                }
+                catch (err) {
+                    logger_js_1.logger.error(`❌ web_search threw exception: ${err.message || String(err)}`);
                     return {
                         tool_call_id: toolCallId,
                         tool_name: toolCall.name,

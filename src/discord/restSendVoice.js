@@ -19,9 +19,15 @@ async function sendVoiceMessageViaRest(args) {
         logger_js_1.logger.error("[VoiceMessage] Missing text/message parameter!");
         return "Error: No text provided for voice message.";
     }
+    // Target is injected by handleMessage.ts if missing from LLM output
+    if (!args.target) {
+        logger_js_1.logger.error("[VoiceMessage] Missing target parameter!");
+        return "Error: No target provided for voice message.";
+    }
+    const target = args.target;
     logger_js_1.logger.info("🎤 [VoiceMessage] Attempting to send voice message");
     logger_js_1.logger.debug(`[VoiceMessage] Text: "${text.substring(0, 100)}${text.length > 100 ? "..." : ""}"`);
-    logger_js_1.logger.debug(`[VoiceMessage] Target: ${args.target}, Type: ${args.target_type || "auto"}`);
+    logger_js_1.logger.debug(`[VoiceMessage] Target: ${target}, Type: ${args.target_type || "auto"}`);
     const token = process.env.DISCORD_TOKEN || process.env.DISCORD_BOT_TOKEN || "";
     if (!token) {
         logger_js_1.logger.error("[VoiceMessage] DISCORD_TOKEN is not set!");
@@ -71,7 +77,7 @@ async function sendVoiceMessageViaRest(args) {
         return `Error: ${tts.error || "Failed to generate audio."}`;
     }
     logger_js_1.logger.info(`[VoiceMessage] Speech generated successfully (${(tts.audioBuffer.length / 1024).toFixed(1)} KB, took ${tts.duration}ms)`);
-    let channelId = args.target;
+    let channelId = target;
     const targetType = args.target_type || "auto";
     if (targetType === "user" || (targetType === "auto" && channelId && channelId.startsWith("7"))) {
         logger_js_1.logger.debug(`[VoiceMessage] Creating DM channel for user: ${channelId}`);
