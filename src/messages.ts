@@ -85,7 +85,7 @@ export async function sendMessage(
   const reply = await handleMessage(message, {
     overrideText: customContent,
     conversationContext,
-    sendReply: false,
+    sendReply: true, // Changed from false - handleMessage now sends its own replies
     includeAttachments: customContent ? false : true,
   });
 

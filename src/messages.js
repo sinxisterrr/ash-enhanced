@@ -79,7 +79,7 @@ async function sendMessage(message, _messageType, conversationContext = null, cu
     const reply = await (0, handleMessage_js_1.handleMessage)(message, {
         overrideText: customContent,
         conversationContext,
-        sendReply: false,
+        sendReply: true, // Changed from false - handleMessage now sends its own replies
         includeAttachments: customContent ? false : true,
     });
     return reply ?? "";
